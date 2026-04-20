@@ -54,5 +54,13 @@ Because the Broadcaster relies on a web interface, you must flash **both** the f
 2. Click **Upload Filesystem Image** under Platform to upload "website" (This will automatically run Webpack to compile the web assets before pushing them to the board).
    <img width="298" height="342" alt="image" src="https://github.com/user-attachments/assets/02f9f768-0855-414d-9298-3a3098d8398b" />
 
+### Flashing Tip:
+When flashing ESP32, it can be finicky.  Sometimes you have to hold the BOOT button, sometimes you have power it on, hold the BOOT, press the EN button, then release the boot.  Sometimes it just flashes without touching anything.
+
+### USB Power warning
+If you're connecting the power of your LED strip directly to your board, you HAVE to limit the max brightness, both for your board's sake, and your USB's sake.  In the listener/src/main.cpp code, search for "#define BRIGHTNESS" and change the number to somethhing low (128 is half brightness)
+
 ## 🔋 Power Saving Tips
 WS2812B LEDs draw a significant "vampire" current even when displaying black. If deploying this on a battery (e.g., a wearable hat), it is highly recommended to wire an N-Channel MOSFET (like an IRLZ44N) between the LED strip and the power source to digitally cut the power when animations are inactive.
+
+After connecting to the ESP32 Wifi AP, your device may or may not automatically open the necessary page.  Browse to 192.168.4.1 to see the page; you might have to turn off mobile data.
