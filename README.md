@@ -36,7 +36,7 @@ This project is built using **PlatformIO**.  I'm assuming you already have your 
 2. In the PlatformIO Sidebar, select the board you want:
    <img width="224" height="229" alt="image" src="https://github.com/user-attachments/assets/5d5980d5-02e2-4efc-9123-fd93bb77db03" />
    broadcaster_wroom
-   brodcaster_c3
+   broadcaster_c3
    listener_wroom
    listener_c3
    ** After expanding one of the folders, it may take a moment for PlatformIO to pull in all the available tasks, so give it a moment
