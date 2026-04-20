@@ -63,4 +63,5 @@ If you're connecting the power of your LED strip directly to your board, you HAV
 ## 🔋 Power Saving Tips
 WS2812B LEDs draw a significant "vampire" current even when displaying black. If deploying this on a battery (e.g., a wearable hat), it is highly recommended to wire an N-Channel MOSFET (like an IRLZ44N) between the LED strip and the power source to digitally cut the power when animations are inactive.
 
+## Connecting Tip
 After connecting to the ESP32 Wifi AP, your device may or may not automatically open the necessary page.  Browse to 192.168.4.1 to see the page; you might have to turn off mobile data.
