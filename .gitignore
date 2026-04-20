@@ -7,3 +7,4 @@ dist/
 *.hex
 broadcaster/frontend/node_modules/
 broadcaster/frontend/dist/
+compile_commands.json
