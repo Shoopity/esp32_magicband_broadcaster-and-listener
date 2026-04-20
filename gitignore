@@ -1,0 +1,9 @@
+.pio
+.vscode
+node_modules/
+dist/
+*.bin
+*.elf
+*.hex
+broadcaster/frontend/node_modules/
+broadcaster/frontend/dist/
