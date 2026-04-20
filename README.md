@@ -25,25 +25,34 @@ This project uses a PlatformIO mono-repo structure:
 
 *   **ESP32**: Fully compatible with both `ESP32-WROOM` and `ESP32-C3` architectures.
 *   **LEDs**: WS2812B addressable LED strip (Default configured to 148 pixels across 5 distinct zones).
+*   When using a WROOM, the LED pin is 15
+*   When using a C3, the LED pin is 8
 
 ## 🚀 Installation & Flashing
 
-This project is built using **PlatformIO**.
+This project is built using **PlatformIO**.  I'm assuming you already have your board connected to your computer and you know the COM port
 
 1. Open the project folder in VS Code with the PlatformIO extension installed.
-2. At the bottom toolbar, select your target environment:
-    *   `env:broadcaster_wroom`
-    *   `env:broadcaster_c3`
-    *   `env:listener_wroom`
-    *   `env:listener_c3`
+2. In the PlatformIO Sidebar, select the board you want:
+   <img width="224" height="229" alt="image" src="https://github.com/user-attachments/assets/5d5980d5-02e2-4efc-9123-fd93bb77db03" />
+   broadcaster_wroom
+   brodcaster_c3
+   listener_wroom
+   listener_c3
+   ** After expanding one of the folders, it may take a moment for PlatformIO to pull in all the available tasks, so give it a moment
 
 ### Flashing the Listener
 Simply click the **Upload** button in PlatformIO to compile and flash the firmware to your board.
+<img width="306" height="312" alt="image" src="https://github.com/user-attachments/assets/2776b80d-0995-44b8-a741-36cfd3654bd8" />
+Wait until it is finished.
+You now have an ESP32 that is listening for MagicBand+ Bluetooth codes and will output various colors and animations to WS2812 LEDs on the proper pin (see above).
 
 ### Flashing the Broadcaster
 Because the Broadcaster relies on a web interface, you must flash **both** the firmware and the filesystem:
-1. Click **Upload** to flash the firmware.
-2. Open the PlatformIO sidebar menu, navigate to your environment, and click **Upload Filesystem Image** (This will automatically run Webpack to compile the web assets before pushing them to the board).
+1. Click **Upload** under General to flash the firmware.
+   <img width="298" height="342" alt="image" src="https://github.com/user-attachments/assets/f4df8b76-7221-40c4-bb03-58bba5b1b8fc" />
+2. Click **Upload Filesystem Image** under Platform to upload "website" (This will automatically run Webpack to compile the web assets before pushing them to the board).
+   <img width="298" height="342" alt="image" src="https://github.com/user-attachments/assets/02f9f768-0855-414d-9298-3a3098d8398b" />
 
 ## 🔋 Power Saving Tips
 WS2812B LEDs draw a significant "vampire" current even when displaying black. If deploying this on a battery (e.g., a wearable hat), it is highly recommended to wire an N-Channel MOSFET (like an IRLZ44N) between the LED strip and the power source to digitally cut the power when animations are inactive.
