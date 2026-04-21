@@ -12,6 +12,7 @@
 #ifndef NUM_LEDS
 #define NUM_LEDS    148
 #endif
+#define MOSFET_PIN  12 // Pin to toggle LED strip power via MOSFET
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];
@@ -29,12 +30,22 @@ CRGB leds[NUM_LEDS];
 uint32_t indicatorTimer = 0;
 bool indicatorActive = false;
 
-// Layout Config
-struct Section { int start; int end; };
-Section sections[5]; // Dynamically sized in setup()
+// Layout Config: Zone Map (0-4 for each LED)
+uint8_t zoneMap[NUM_LEDS];
+
+void setZoneRange(uint8_t zone, int start, int end) {
+    for (int i = start; i <= end; i++) {
+        if (i >= 0 && i < NUM_LEDS) zoneMap[i] = zone;
+    }
+}
 
 // Animation State
-enum AnimationMode { MODE_SOLID, MODE_DUAL, MODE_BURST, MODE_COMET, MODE_FADE, MODE_STROBE, MODE_STEPPER, MODE_RAINBOW, MODE_FLASH_WHITE, MODE_FLASH_PURPLE, MODE_FLASH_CHOOSE };
+enum AnimationMode { 
+    MODE_SOLID, MODE_DUAL, MODE_BURST, MODE_COMET, MODE_FADE, MODE_STROBE, 
+    MODE_STEPPER, MODE_RAINBOW, MODE_FLASH_WHITE, MODE_FLASH_PURPLE, 
+    MODE_FLASH_CHOOSE, MODE_FADE_TO_PURPLE, MODE_GREEN_PURPLE_FLASH, 
+    MODE_ZONE_TWINKLE 
+};
 
 struct AnimationState {
     AnimationMode mode;
@@ -191,8 +202,8 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             uint8_t subAction = (uint8_t)mfgData[actionIdx + 1];
             nextState.active = false;
             
-            if (subAction == 0x0E && mfgData.length() > actionIdx + 4) {
-                parseTiming((uint8_t)mfgData[actionIdx + 4], nextState); // 0E timing byte is shifted right
+            if (subAction == 0x0E && mfgData.length() > actionIdx + 3) {
+                parseTiming((uint8_t)mfgData[actionIdx + 3], nextState); // 0E timing byte is the signature byte itself
             } else {
                 parseTiming((uint8_t)mfgData[actionIdx + 3], nextState);
             }
@@ -207,8 +218,31 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             if (subAction == 0x05 && mfgData.length() >= actionIdx + 6) {
                 nextState.mode = MODE_SOLID;
                 uint8_t c = (uint8_t)mfgData[actionIdx + 5];
-                for(int i=0; i<5; i++) { nextState.colors[i] = getDisneyColor(c); nextState.colorIndices[i] = c; }
-                snprintf(logBuffer, sizeof(logBuffer), "Action: Solid %s for %.1fs", getDisneyColorName(c), secs);
+                uint8_t mask = (c >> 5) & 0x07;
+                CRGB color = getDisneyColor(c);
+
+                // Default: Clear all zones
+                for(int i=0; i<5; i++) { nextState.colors[i] = CRGB::Black; nextState.colorIndices[i] = 29; }
+
+                if (mask == 0 || mask == 5 || mask == 7) {
+                    // All zones (000, 101, 111)
+                    for(int i=0; i<5; i++) { nextState.colors[i] = color; nextState.colorIndices[i] = c; }
+                } else {
+                    // Specific zone (Matching EMCOT's Mask Palette)
+                    int targetZone = -1;
+                    switch(mask) {
+                        case 1: 
+                        case 6: targetZone = 3; break; // Mask 1 & 6: Top Right (Zone 4)
+                        case 2: targetZone = 4; break; // Mask 2: Bottom Right (Zone 5)
+                        case 3: targetZone = 0; break; // Mask 3: Bottom Left (Zone 1)
+                        case 4: targetZone = 1; break; // Mask 4: Top Left (Zone 2)
+                    }
+                    if (targetZone != -1) {
+                        nextState.colors[targetZone] = color;
+                        nextState.colorIndices[targetZone] = c;
+                    }
+                }
+                snprintf(logBuffer, sizeof(logBuffer), "Action: Solid %s (Mask:%d) for %.1fs", getDisneyColorName(c), mask, secs);
             } else if (subAction == 0x06 && mfgData.length() >= actionIdx + 7) {
                 nextState.mode = MODE_DUAL;
                 uint8_t inner = (uint8_t)mfgData[actionIdx + 5];
@@ -253,15 +287,32 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
                     nextState.mode = MODE_SOLID; for(int i=0; i<5; i++) nextState.colors[i] = CRGB::White;
                     snprintf(logBuffer, sizeof(logBuffer), "Action: Unknown 0C Show Signature for %.1fs", secs);
                 }
-            } else if (subAction == 0x0E && mfgData.length() >= actionIdx + 5) {
-                uint8_t sig = (uint8_t)mfgData[actionIdx + 3];
-                if (sig == 0x01) nextState.mode = MODE_FLASH_WHITE;
-                else if (sig == 0x02) nextState.mode = MODE_FLASH_PURPLE;
-                else if (sig == 0x11) nextState.mode = MODE_FLASH_CHOOSE;
-                else nextState.mode = MODE_FLASH_WHITE;
+            } else if (subAction == 0x0E && mfgData.length() >= actionIdx + 10) {
+                // E9 0E: The "Zoned Action" Mode
+                // Timing is at actionIdx + 3 (Index 7)
+                parseTiming((uint8_t)mfgData[actionIdx + 3], nextState);
                 
-                for(int i=0; i<5; i++) { nextState.zoneFlashing[i] = false; nextState.zoneTimers[i] = 0; nextState.zoneFlashColor[i] = 0; }
-                snprintf(logBuffer, sizeof(logBuffer), "Action: Fast Zone Flash (%02X) for %.1fs", sig, secs);
+                // Signature is the 4th byte from the end
+                uint8_t sig = (uint8_t)mfgData[mfgData.length() - 4];
+                
+                // Colors are 5 bytes starting from actionIdx + 5 (Index 9)
+                for(int i=0; i<5; i++) {
+                    uint8_t colorByte = (uint8_t)mfgData[actionIdx + 5 + i];
+                    nextState.colors[i] = getDisneyColor(colorByte);
+                    nextState.colorIndices[i] = colorByte;
+                }
+
+                if (sig == 0x0B) {
+                    nextState.mode = MODE_ZONE_TWINKLE;
+                    nextState.durationMs = 20000; // 20s run
+                    nextState.fadeOutMs = 2000;   // 2s fade
+                } else {
+                    // 02, FB, etc are variations of Independent Flash
+                    nextState.mode = MODE_FLASH_CHOOSE; // Uses colors[i] independently
+                }
+                
+                for(int i=0; i<5; i++) { nextState.zoneFlashing[i] = false; nextState.zoneTimers[i] = 0; }
+                snprintf(logBuffer, sizeof(logBuffer), "Action: Zoned Action (%02X) for %.1fs", sig, secs);
             } else {
                 nextState.mode = MODE_SOLID; for(int i=0; i<5; i++) nextState.colors[i] = CRGB::White;
                 snprintf(logBuffer, sizeof(logBuffer), "Action: Unknown Mode (%02X) Default for %.1fs", subAction, secs);
@@ -306,7 +357,13 @@ void updateAnimations() {
     }
 
     if (activeState.mode == MODE_SOLID || activeState.mode == MODE_DUAL || activeState.mode == MODE_BURST) {
-        for (int s = 0; s < 5; s++) { CRGB c = activeState.colors[s]; c.nscale8(intensity); for (int i = sections[s].start; i <= sections[s].end; i++) leds[i] = c; }
+        for (int s = 0; s < 5; s++) { 
+            CRGB c = activeState.colors[s]; 
+            c.nscale8(intensity); 
+            for (int i = 0; i < NUM_LEDS; i++) {
+                if (zoneMap[i] == s) leds[i] = c;
+            }
+        }
     } else if (activeState.mode == MODE_COMET) {
         FastLED.clear(); 
         uint16_t pos1 = (elapsed % 4000) * NUM_LEDS / 4000;
@@ -319,9 +376,9 @@ void updateAnimations() {
         }
     } else if (activeState.mode == MODE_RAINBOW) {
         uint8_t deltaHue = (elapsed * 255 / 3000) % 256;
-        for (int s = 0; s < 5; s++) {
-            CRGB c = CHSV(activeState.stepHues[s] + deltaHue, 255, 255);
-            for (int i = sections[s].start; i <= sections[s].end; i++) leds[i] = c;
+        for (int i = 0; i < NUM_LEDS; i++) {
+            uint8_t s = zoneMap[i];
+            leds[i] = CHSV(activeState.stepHues[s] + deltaHue, 255, 255);
         }
     } else if (activeState.mode == MODE_FADE) {
         uint32_t cycle = elapsed % 1500;
@@ -337,50 +394,54 @@ void updateAnimations() {
         for(int i=0; i<NUM_LEDS; i++) leds[i] = c;
     } else if (activeState.mode == MODE_STEPPER) {
         uint8_t stepIdx = (elapsed / 500) % 3;
-        for (int s = 0; s < 5; s++) { 
-            CRGB c = activeState.stepColors[s][stepIdx];
-            for (int i = sections[s].start; i <= sections[s].end; i++) leds[i] = c; 
+        for (int i = 0; i < NUM_LEDS; i++) { 
+            uint8_t s = zoneMap[i];
+            leds[i] = activeState.stepColors[s][stepIdx];
         }
     } else if (activeState.mode == MODE_FLASH_WHITE || activeState.mode == MODE_FLASH_PURPLE || activeState.mode == MODE_FLASH_CHOOSE) {
         FastLED.clear();
         for (int s = 0; s < 5; s++) {
             if (!activeState.zoneFlashing[s]) {
-                if (elapsed - activeState.zoneTimers[s] >= 1000) { // 1 second cooldown
-                    if (random8() < 12) { // Random chance to trigger (~2 times per second at 60fps)
+                if (elapsed - activeState.zoneTimers[s] >= 100) { // Fast trigger
+                    if (random8() < 32) { 
                         activeState.zoneFlashing[s] = true;
                         activeState.zoneTimers[s] = elapsed;
-                        if (activeState.mode == MODE_FLASH_CHOOSE) {
-                            if (s == 0 || s == 3) activeState.zoneFlashColor[s] = 1; // Purple
-                            else if (s == 1 || s == 4) activeState.zoneFlashColor[s] = 2; // Green
-                            else activeState.zoneFlashColor[s] = (random8() < 128) ? 1 : 2; // CN choose
-                        }
                     }
                 }
             } else {
                 uint32_t fElap = elapsed - activeState.zoneTimers[s];
-                if (fElap > 250) { // 250ms total flash duration
+                uint32_t flashDur = 400;
+                if (fElap > flashDur) {
                     activeState.zoneFlashing[s] = false;
-                    activeState.zoneTimers[s] = elapsed; // Start cooldown
+                    activeState.zoneTimers[s] = elapsed;
                 } else {
-                    CRGB renderColor = CRGB::Black;
-                    if (activeState.mode == MODE_FLASH_WHITE) {
-                        uint8_t ratio = map(fElap, 0, 250, 255, 0);
-                        renderColor = CRGB(ratio, ratio, ratio);
-                    } else if (activeState.mode == MODE_FLASH_PURPLE) {
-                        // White -> Purple -> Off
-                        if (fElap < 125) {
-                            uint8_t ratio = map(fElap, 0, 125, 255, 0);
-                            renderColor = blend(CRGB::Purple, CRGB::White, ratio);
-                        } else {
-                            uint8_t ratio = map(fElap, 125, 250, 255, 0);
-                            renderColor = CRGB::Purple; renderColor.nscale8(ratio);
-                        }
-                    } else if (activeState.mode == MODE_FLASH_CHOOSE) {
-                        CRGB baseColor = (activeState.zoneFlashColor[s] == 1) ? CRGB::Purple : CRGB::Green;
-                        uint8_t ratio = map(fElap, 0, 250, 255, 0);
-                        renderColor = baseColor; renderColor.nscale8(ratio);
-                    }
-                    for (int i = sections[s].start; i <= sections[s].end; i++) leds[i] = renderColor;
+                    CRGB baseColor = activeState.colors[s];
+                    uint8_t ratio = map(fElap, 0, flashDur, 255, 0);
+                    baseColor.nscale8(ratio);
+                    for (int i = 0; i < NUM_LEDS; i++) if (zoneMap[i] == s) leds[i] = baseColor;
+                }
+            }
+        }
+    } else if (activeState.mode == MODE_ZONE_TWINKLE) {
+        FastLED.clear();
+        for (int s = 0; s < 5; s++) {
+            if (!activeState.zoneFlashing[s]) {
+                bool forceTrigger = (elapsed - activeState.zoneTimers[s] > 2000);
+                if (forceTrigger || random8() < 20) {
+                    activeState.zoneFlashing[s] = true;
+                    activeState.zoneTimers[s] = elapsed;
+                }
+            } else {
+                uint32_t fElap = elapsed - activeState.zoneTimers[s];
+                uint32_t twinkleDur = 1500;
+                if (fElap > twinkleDur) {
+                    activeState.zoneFlashing[s] = false;
+                    activeState.zoneTimers[s] = elapsed;
+                } else {
+                    CRGB c = activeState.colors[s];
+                    uint8_t ratio = map(fElap, 0, twinkleDur, 255, 0);
+                    c.nscale8(ratio);
+                    for (int i = 0; i < NUM_LEDS; i++) if (zoneMap[i] == s) leds[i] = c;
                 }
             }
         }
@@ -389,12 +450,28 @@ void updateAnimations() {
 }
 
 void setup() {
-    // Dynamically calculate sections based on NUM_LEDS
+    // Default fallback: split into 5 equal contiguous sections
     int ledsPerSection = NUM_LEDS / 5;
     for (int i = 0; i < 5; i++) {
-        sections[i].start = i * ledsPerSection;
-        sections[i].end = (i == 4) ? (NUM_LEDS - 1) : ((i + 1) * ledsPerSection - 1);
+        setZoneRange(i, i * ledsPerSection, (i == 4) ? (NUM_LEDS - 1) : ((i + 1) * ledsPerSection - 1));
     }
+
+    // User's specific Zone Mapping (translating 1-indexed to 0-indexed)
+    // Zone 1: 1~5, 26~30
+    setZoneRange(0, 0, 4);
+    setZoneRange(0, 25, 29);
+    // Zone 2: 6~10, 31~35
+    setZoneRange(1, 5, 9);
+    setZoneRange(1, 30, 34);
+    // Zone 3: 21~25, 46~50 (Aligned to user's "back of band" logic)
+    setZoneRange(2, 20, 24);
+    setZoneRange(2, 45, 49);
+    // Zone 4: 11~15, 36~40
+    setZoneRange(3, 10, 14);
+    setZoneRange(3, 35, 39);
+    // Zone 5: 16~20, 41~45
+    setZoneRange(4, 15, 19);
+    setZoneRange(4, 40, 44);
 
     // Reduce heat by underclocking CPU to 80MHz (plenty for BLE and LED)
     setCpuFrequencyMhz(80);
@@ -406,6 +483,9 @@ void setup() {
     
     pinMode(ONBOARD_LED_PIN, OUTPUT);
     digitalWrite(ONBOARD_LED_PIN, !LED_ACTIVE_STATE); // Ensure off initially
+
+    pinMode(MOSFET_PIN, OUTPUT);
+    digitalWrite(MOSFET_PIN, LOW); // LED power off by default
     
     NimBLEDevice::setScanDuplicateCacheSize(0);
     NimBLEDevice::init("MB_Scanner_Desk");
@@ -430,4 +510,7 @@ void loop() {
     // Throttle frame rate down from 100fps to ~30fps 
     // This stops FastLED from aggressively blocking CPU interrupts continuously, dropping heat massively
     delay(30); 
+
+    // MOSFET Power Toggle
+    digitalWrite(MOSFET_PIN, activeState.active ? HIGH : LOW);
 }

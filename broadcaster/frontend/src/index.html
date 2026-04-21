@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width,initial-scale=1" />
 <title>MagicBand+ — Tech Control Panel</title>
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
-<link rel="stylesheet" type="text/css" href="/index.css">
+<link rel="stylesheet" type="text/css" href="/index.css?v=1.1">
 </head>
 <body>
     <div class="container" role="application" aria-label="MagicBand plus control panel">
@@ -126,7 +126,10 @@
       <div class="group" style="margin-top:24px; border-top:1px solid var(--border); padding-top:24px">
         <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
           <div style="min-width:320px; flex:1 1 60%">
-            <div class="section-title" style="margin-bottom:8px">Raw Protocol Tools</div>
+            <div class="section-title" style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px">
+              <span>Raw Protocol Tools</span>
+              <span class="tiny" style="opacity:0.5">v1.1</span>
+            </div>
             <div class="tiny">Hex sequence (e.g. 8301E909...)</div>
             <div style="display:flex; gap:8px; margin-top:8px">
               <input id="rawHex" type="text" placeholder="8301E909" aria-label="raw hex data" style="flex:1; font-family:var(--font-mono); letter-spacing:0.05em">
@@ -137,38 +140,38 @@
               <input id="rawBits" type="text" placeholder="1000 0011 0000 0001" aria-label="raw bit data" style="flex:1; font-family:var(--font-mono); letter-spacing:0.05em">
             </div>
             <div class="tiny" style="margin-top:12px">Protocol Laboratory (Field Builder)</div>
-            <div id="protocolLab" style="display:flex; gap:6px; flex-wrap:wrap; margin-top:8px; padding:12px; background:rgba(0,212,255,0.03); border:1px solid rgba(0,212,255,0.1); border-radius:8px">
+            <div id="protocolLab" class="protocol-lab">
               <div class="field-group">
-                <span class="lab-label">Disney</span>
-                <input id="lab_disney" type="text" value="8301" readonly class="lab-input-fixed" style="width:42px">
+                <label for="lab_disney" class="lab-label">Disney</label>
+                <input id="lab_disney" type="text" value="8301" readonly class="lab-input-fixed">
               </div>
               <div class="field-group">
-                <span class="lab-label">Header</span>
-                <input id="lab_header" type="text" value="E100" readonly class="lab-input-fixed" style="width:42px">
+                <label for="lab_header" class="lab-label">Header</label>
+                <input id="lab_header" type="text" value="E100" readonly class="lab-input-fixed">
               </div>
               <div class="field-group">
-                <span class="lab-label">Action</span>
-                <input id="lab_action" type="text" value="E9" readonly class="lab-input-fixed" style="width:28px">
+                <label for="lab_action" class="lab-label">Action</label>
+                <input id="lab_action" type="text" value="E9" readonly class="lab-input-fixed">
               </div>
               <div class="field-group">
-                <span class="lab-label">Mode</span>
-                <input id="lab_mode" type="text" maxlength="2" placeholder="05" class="lab-input-edit" style="width:28px">
+                <label for="lab_mode" class="lab-label">Mode</label>
+                <input id="lab_mode" type="text" maxlength="2" placeholder="05" class="lab-input-edit">
               </div>
               <div class="field-group">
-                <span class="lab-label">Spacer</span>
-                <input id="lab_spacer" type="text" value="00" readonly class="lab-input-fixed" style="width:28px">
+                <label for="lab_spacer" class="lab-label">Spacer</label>
+                <input id="lab_spacer" type="text" value="00" readonly class="lab-input-fixed">
               </div>
               <div class="field-group">
-                <span class="lab-label">Timing</span>
-                <input id="lab_timing" type="text" maxlength="2" placeholder="0F" class="lab-input-edit" style="width:28px">
+                <label for="lab_timing" class="lab-label">Timing</label>
+                <input id="lab_timing" type="text" maxlength="2" placeholder="0F" class="lab-input-edit">
               </div>
               <div class="field-group">
-                <span class="lab-label">Payload</span>
-                <input id="lab_payload" type="text" placeholder="0E" class="lab-input-edit" style="width:100px">
+                <label for="lab_payload" class="lab-label">Payload</label>
+                <input id="lab_payload" type="text" placeholder="0E" class="lab-input-edit">
               </div>
               <div class="field-group">
-                <span class="lab-label">Vibe</span>
-                <input id="lab_vibe" type="text" maxlength="2" placeholder="B0" class="lab-input-edit" style="width:28px">
+                <label for="lab_vibe" class="lab-label">Vibe</label>
+                <input id="lab_vibe" type="text" maxlength="2" placeholder="B0" class="lab-input-edit">
               </div>
             </div>
 
@@ -183,6 +186,6 @@
     </aside>
   </div>
   <!-- keep this at the end -->
-  <script src="/index.js"></script>
+  <script src="/index.js?v=1.1"></script>
 </body>
 </html>
