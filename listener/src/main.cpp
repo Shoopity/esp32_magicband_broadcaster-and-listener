@@ -2,17 +2,36 @@
 #include <FastLED.h>
 #include <NimBLEDevice.h>
 
-// Hardware Config
-#define LED_PIN     15
+#ifndef LED_PIN
+  #if defined(CONFIG_IDF_TARGET_ESP32C3)
+    #define LED_PIN     8   // Common WS2812 pin for ESP32-C3
+  #else
+    #define LED_PIN     15  // Default for ESP32 WROOM
+  #endif
+#endif
+#ifndef NUM_LEDS
 #define NUM_LEDS    148
+#endif
 #define LED_TYPE    WS2812B
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];
 #define BRIGHTNESS  128
 
+// Indicator Config
+#if defined(CONFIG_IDF_TARGET_ESP32C3)
+  #define ONBOARD_LED_PIN 9 // Many C3 boards use 9 or 8. (Change this if your blue LED is on another pin)
+  #define LED_ACTIVE_STATE LOW // C3 blue LEDs are often active-low
+#else
+  #define ONBOARD_LED_PIN 2 // WROOM built-in blue LED
+  #define LED_ACTIVE_STATE HIGH // WROOM blue LEDs are active-high
+#endif
+
+uint32_t indicatorTimer = 0;
+bool indicatorActive = false;
+
 // Layout Config
 struct Section { int start; int end; };
-const Section sections[5] = { {0, 27}, {30, 57}, {60, 87}, {90, 117}, {120, 147} };
+Section sections[5]; // Dynamically sized in setup()
 
 // Animation State
 enum AnimationMode { MODE_SOLID, MODE_DUAL, MODE_BURST, MODE_COMET, MODE_FADE, MODE_STROBE, MODE_STEPPER, MODE_RAINBOW, MODE_FLASH_WHITE, MODE_FLASH_PURPLE, MODE_FLASH_CHOOSE };
@@ -251,18 +270,30 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             Serial.println(logBuffer);
             nextState.active = true;
             newCommandReceived = true;
+            
+            // Trigger onboard flash
+            indicatorActive = true;
+            indicatorTimer = millis();
+            digitalWrite(ONBOARD_LED_PIN, LED_ACTIVE_STATE);
         }
     }
 };
 
 void updateAnimations() {
     if (newCommandReceived) { activeState = nextState; newCommandReceived = false; }
-    if (!activeState.active) { FastLED.clear(); FastLED.show(); return; }
+    if (!activeState.active) { 
+        FastLED.clear(); 
+        FastLED.show(); 
+        return; 
+    }
 
     uint32_t elapsed = millis() - activeState.triggerTime;
     // Hard 30s cut-off or packet-specified duration
     if (elapsed > 30000 || (!activeState.isAlwaysOn && elapsed >= activeState.durationMs)) {
-        activeState.active = false; FastLED.clear(); FastLED.show(); return;
+        activeState.active = false; 
+        FastLED.clear(); 
+        FastLED.show(); 
+        return;
     }
 
     uint8_t intensity = beatsin8(60, 150, 255, activeState.triggerTime);
@@ -358,17 +389,45 @@ void updateAnimations() {
 }
 
 void setup() {
+    // Dynamically calculate sections based on NUM_LEDS
+    int ledsPerSection = NUM_LEDS / 5;
+    for (int i = 0; i < 5; i++) {
+        sections[i].start = i * ledsPerSection;
+        sections[i].end = (i == 4) ? (NUM_LEDS - 1) : ((i + 1) * ledsPerSection - 1);
+    }
+
+    // Reduce heat by underclocking CPU to 80MHz (plenty for BLE and LED)
+    setCpuFrequencyMhz(80);
+    
     delay(2000); Serial.begin(115200);
     FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS).setCorrection(TypicalLEDStrip);
     FastLED.setBrightness(BRIGHTNESS);
     FastLED.clear(true);
+    
+    pinMode(ONBOARD_LED_PIN, OUTPUT);
+    digitalWrite(ONBOARD_LED_PIN, !LED_ACTIVE_STATE); // Ensure off initially
+    
     NimBLEDevice::setScanDuplicateCacheSize(0);
     NimBLEDevice::init("MB_Scanner_Desk");
     NimBLEScan* pScan = NimBLEDevice::getScan();
     pScan->setAdvertisedDeviceCallbacks(new MyDescriptiveCallbacks(), false);
-    pScan->setActiveScan(true); pScan->setDuplicateFilter(false);
+    pScan->setActiveScan(true); 
+    pScan->setDuplicateFilter(false);
+    pScan->setInterval(100);
+    pScan->setWindow(75); // Sleep the radio 25% of the time to cool down
     pScan->start(0, nullptr, false);
     Serial.println("\r\n--- MagicBand+ Descriptive Decoder Ready ---");
 }
 
-void loop() { updateAnimations(); delay(10); }
+void loop() { 
+    updateAnimations(); 
+    
+    if (indicatorActive && (millis() - indicatorTimer > 100)) {
+        digitalWrite(ONBOARD_LED_PIN, !LED_ACTIVE_STATE);
+        indicatorActive = false;
+    }
+    
+    // Throttle frame rate down from 100fps to ~30fps 
+    // This stops FastLED from aggressively blocking CPU interrupts continuously, dropping heat massively
+    delay(30); 
+}
