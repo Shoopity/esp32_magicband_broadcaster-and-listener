@@ -65,3 +65,12 @@ WS2812B LEDs draw a significant "vampire" current even when displaying black. If
 
 ## Connecting Tip
 After connecting to the ESP32 Wifi AP, your device may or may not automatically open the necessary page.  Browse to 192.168.4.1 to see the page; you might have to turn off mobile data.
+
+## Editing tips
+1. To the pin and the number of LEDs in your project, you can go to listener/src/main.cpp and change:
+     #define LED_PIN
+     #define NUM_LEDS
+2. To change which LEDs in your strip as assigned to which zone, you can go to listener/src/main.cpp, head to the void setup() function, and set your Zones
+   Zone 1 is the bottom left LED, zone 2 is the top left LED, zone 3 is the center LED, zone 4 is top right LED, and zone 5 is the bottom right LED
+   setZoneRange(zone#, startLED, endLED) (with your first LED being number 0)
+     
