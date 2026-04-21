@@ -8,3 +8,6 @@ dist/
 broadcaster/frontend/node_modules/
 broadcaster/frontend/dist/
 compile_commands.json
+data/
+__pycache__/
+*.pyc
