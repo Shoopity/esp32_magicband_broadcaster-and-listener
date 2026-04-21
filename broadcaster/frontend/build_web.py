@@ -13,7 +13,7 @@ def build_web_assets(source, target, env):
     broadcaster_dir = os.path.join(project_dir, "broadcaster")
     frontend_dir = os.path.join(broadcaster_dir, "frontend")
     dist_dir = os.path.join(frontend_dir, "dist")
-    data_dir = os.path.join(broadcaster_dir, "data")
+    data_dir = os.path.join(project_dir, "data")
     
     # Ensure frontend dir exists
     if not os.path.exists(frontend_dir):
@@ -27,11 +27,21 @@ def build_web_assets(source, target, env):
         print("ERROR: npm not found in PATH.")
         sys.exit(1)
     
-    # Clean dist/ and data/ completely
+    # Clean dist/ and data/ correctly
     for path in [dist_dir, data_dir]:
         if os.path.exists(path):
-            print(f"Removing old {path}...")
-            shutil.rmtree(path)
+            print(f"Cleaning {path}...")
+            for item in os.listdir(path):
+                item_path = os.path.join(path, item)
+                if os.path.isfile(item_path):
+                    os.unlink(item_path)
+                elif os.path.isdir(item_path):
+                    shutil.rmtree(item_path)
+        else:
+            os.makedirs(path)
+    
+    import time
+    time.sleep(0.5) # Allow Windows handles to settle
     
     # Run npm install if needed
     node_modules = os.path.join(frontend_dir, "node_modules")
@@ -52,8 +62,10 @@ def build_web_assets(source, target, env):
         sys.exit(1)
 
     # Copy dist → data
-    shutil.copytree(dist_dir, data_dir)
-    print("✓ Web assets copied to /data")
+    for item in os.listdir(dist_dir):
+        shutil.copy2(os.path.join(dist_dir, item), os.path.join(data_dir, item))
+    print(f"✓ Web assets copied to {data_dir}")
+    time.sleep(0.5) # Final sync delay for Windows
 
     print("=" * 60)
     print("Web assets ready for filesystem build")
