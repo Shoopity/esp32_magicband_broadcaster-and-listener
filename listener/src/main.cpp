@@ -7,18 +7,11 @@
 #include <WiFi.h>
 #include <ESPAsyncWebServer.h>
 
+// --- LOGGING ---
 #define LOG_FILE "/unknown.txt"
 std::set<String> loggedPackets; 
 AsyncWebServer server(80);
 bool webServerStarted = false;
-
-// --- KNOWN SIGNATURES (Implied 8301 at the front) ---
-// Add any long hex strings here that you have already mapped to animations.
-const char* KNOWN_SIGNATURES[] = {
-  "e100e90e00010fbda0a0bda059070048aeb5", // Your custom animation
-  "e100e90500090ea7b0"                    // Cyan Top Left
-};
-const int KNOWN_COUNT = 2;
 
 #ifndef LED_PIN
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
@@ -298,19 +291,6 @@ void loadLogs() {
   file.close();
 }
 
-bool isKnownSignature(std::string data) {
-  String hex = "";
-  for (size_t i = 0; i < data.length(); i++) {
-    uint8_t b = (uint8_t)data[i];
-    if (b < 0x10) hex += "0";
-    hex += String(b, HEX);
-  }
-  // Check against our manual list (ignoring the 8301 prefix if needed)
-  for (int i = 0; i < KNOWN_COUNT; i++) {
-    if (hex.endsWith(KNOWN_SIGNATURES[i])) return true;
-  }
-  return false;
-}
 
 class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice *advertisedDevice) {
@@ -328,9 +308,6 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     lastSeen.data = mfgData;
     lastSeen.addr = addr;
     lastSeen.timestamp = millis();
-
-    // 1. Check if this is a manually ignored signature
-    if (isKnownSignature(mfgData)) return;
 
     bool triggered = false;
     bool hasE9 = false;
@@ -350,7 +327,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     if (actionIdx == -1)
       return;
 
-    // PING: Logic to ignore MB respondents
+    // 1. PING: Logic to ignore MB respondents
     if (primaryCode == 0xCC) {
       // Broadcasters (Show Nodes) are usually 5 bytes: 83 01 CC 03 00 (length
       // 5) MB replies are usually 18-20+ bytes.
@@ -553,8 +530,9 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       digitalWrite(ONBOARD_LED_PIN, LED_ACTIVE_STATE);
     }
 
-    // LOG EVERY UNIQUE E9 BROADCAST
-    if (hasE9) {
+    // --- SECONDARY ACTION: LOGGING ---
+    // We do this at the very end so the animation state is already triggered.
+    if (primaryCode != 0xCC) {
       logUnknown(mfgData);
     }
   }
