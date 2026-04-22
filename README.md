@@ -6,13 +6,22 @@ Protocol research and decoding guidance provided by the excellent [EMCOT MagicBa
 
 ## 🌟 Features
 
-*   **Advanced Show Controller**: The Listener firmware implements a robust sub-timer state machine capable of executing complex directional animations.
-    *   *Green Comet Chase*: Dual comets with fading tails rotating at precise intervals.
-    *   *Rainbow Cycle*: 5-zone hue shifting synchronized across the entire LED strand.
-    *   *Zone Steppers & Strobes*: Independent zone-based coloring and timed flashes.
-*   **Packet Fingerprinting**: Distinguishes between visually identical payload signatures to route multi-byte hexadecimal `E9 0C` and `E9 0E` payloads to the correct animation libraries.
-*   **32-Color Custom Palette**: Maps Disney's raw 5-bit color indices to calibrated, human-readable RGB values for perfect color accuracy on WS2812B strips.
-*   **Web Interpreter UI**: The Broadcaster features a live, responsive web interface that decodes raw hexadecimal payloads into human-readable labels (Vibration, Color, Zone Masking, and Animation Mode).
+*  Changes from xxfunprojectsxx broadcaster/web page:
+    *   Added three fields at the bottom to let you put put in your own Hex code (copy/paste from the EMCOT site), your own binary, or a "Laboratory" area.
+    *   These fields "interact" with each other, meaning whatever hex you type in automatically translates to binary, and whatever binary you enter automatically adjusts the Hex.
+    *   The "Laboratory" section isn't 100% perfect, but it can be used when trying to generate your own broadcasts.
+    *   **Web Interpreter UI**: The Broadcaster features a live, responsive web interface that decodes raw hexadecimal payloads into human-readable labels (Vibration, Color, Zone Masking, and Animation Mode).
+
+*   Created a Listener folder so you can flash an ESP32 to listen for MB packets
+    *   **Advanced Show Controller**: The Listener firmware implements a robust sub-timer state machine capable of executing complex directional animations, including but not limited to:
+        *   *Green Comet Chase*: Dual comets with fading tails rotating at precise intervals.
+        *   *Rainbow Cycle*: 5-zone hue shifting synchronized across the entire LED strand.
+        *   *Zone Steppers & Strobes*: Independent zone-based coloring and timed flashes.
+    *   **32-Color Custom Palette**: Maps Disney's raw 5-bit color indices to calibrated, human-readable RGB values for "better" color accuracy on WS2812B strips.
+    *   Stores every broadcast it comes across once for later testing.
+        *   Connect a Serial Monitor and type in "startweb" then press enter.
+        *   This will start an AP like the broadcaster called "MB-Scanner-Logs"; same password and IP of the broadcaster.
+        *   From here, you can download what's been seen and clear the log.
 
 ## 🗂️ Repository Structure
 
