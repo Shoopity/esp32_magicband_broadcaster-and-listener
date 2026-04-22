@@ -2,6 +2,23 @@
 #include <Arduino.h>
 #include <FastLED.h>
 #include <NimBLEDevice.h>
+#include <LittleFS.h>
+#include <set>
+#include <WiFi.h>
+#include <ESPAsyncWebServer.h>
+
+#define LOG_FILE "/unknown.txt"
+std::set<String> loggedPackets; 
+AsyncWebServer server(80);
+bool webServerStarted = false;
+
+// --- KNOWN SIGNATURES (Implied 8301 at the front) ---
+// Add any long hex strings here that you have already mapped to animations.
+const char* KNOWN_SIGNATURES[] = {
+  "e100e90e00010fbda0a0bda059070048aeb5", // Your custom animation
+  "e100e90500090ea7b0"                    // Cyan Top Left
+};
+const int KNOWN_COUNT = 2;
 
 #ifndef LED_PIN
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
@@ -248,6 +265,53 @@ CRGB getDisneyColor(uint8_t rawByte) {
   }
 }
 
+void logUnknown(std::string data) {
+  String hex = "";
+  for (size_t i = 0; i < data.length(); i++) {
+    uint8_t b = (uint8_t)data[i];
+    if (b < 0x10) hex += "0";
+    hex += String(b, HEX);
+  }
+  
+  if (loggedPackets.count(hex) > 0) return; // Already seen
+
+  Serial.print("[LOGGER] New Unknown: ");
+  Serial.println(hex);
+
+  File file = LittleFS.open(LOG_FILE, FILE_APPEND);
+  if (file) {
+    file.println(hex);
+    file.close();
+    loggedPackets.insert(hex); 
+  }
+}
+
+void loadLogs() {
+  if (!LittleFS.exists(LOG_FILE)) return;
+  File file = LittleFS.open(LOG_FILE, FILE_READ);
+  if (!file) return;
+  while (file.available()) {
+    String line = file.readStringUntil('\n');
+    line.trim();
+    if (line.length() > 0) loggedPackets.insert(line);
+  }
+  file.close();
+}
+
+bool isKnownSignature(std::string data) {
+  String hex = "";
+  for (size_t i = 0; i < data.length(); i++) {
+    uint8_t b = (uint8_t)data[i];
+    if (b < 0x10) hex += "0";
+    hex += String(b, HEX);
+  }
+  // Check against our manual list (ignoring the 8301 prefix if needed)
+  for (int i = 0; i < KNOWN_COUNT; i++) {
+    if (hex.endsWith(KNOWN_SIGNATURES[i])) return true;
+  }
+  return false;
+}
+
 class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice *advertisedDevice) {
     std::string mfgData = advertisedDevice->getManufacturerData();
@@ -265,6 +329,12 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     lastSeen.addr = addr;
     lastSeen.timestamp = millis();
 
+    // 1. Check if this is a manually ignored signature
+    if (isKnownSignature(mfgData)) return;
+
+    bool triggered = false;
+    bool hasE9 = false;
+
     int actionIdx = -1;
     uint8_t primaryCode = 0;
     for (int i = 2; i < mfgData.length(); i++) {
@@ -272,6 +342,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       if (c == 0xE9 || c == 0xCC) {
         actionIdx = i;
         primaryCode = c;
+        if (c == 0xE9) hasE9 = true;
         break;
       }
     }
@@ -284,7 +355,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       // Broadcasters (Show Nodes) are usually 5 bytes: 83 01 CC 03 00 (length
       // 5) MB replies are usually 18-20+ bytes.
       if (mfgData.length() < 7) {
-        Serial.println("[PING] Broadcaster Node detected.");
+        triggered = true; 
       }
       return;
     }
@@ -331,6 +402,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             nextState.colors[i] = color;
             nextState.colorIndices[i] = c;
           }
+          triggered = true;
         } else {
           // Specific zone (Matching EMCOT's Mask Palette)
           int targetZone = -1;
@@ -352,6 +424,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
           if (targetZone != -1) {
             nextState.colors[targetZone] = color;
             nextState.colorIndices[targetZone] = c;
+            triggered = true;
           }
         }
         snprintf(logBuffer, sizeof(logBuffer),
@@ -365,6 +438,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         nextState.colorIndices[2] = inner;
         nextState.colors[0] = nextState.colors[1] = nextState.colors[3] =
             nextState.colors[4] = getDisneyColor(outer);
+        triggered = true;
         snprintf(logBuffer, sizeof(logBuffer),
                  "Action: Dual Colors %s (Outer) & %s (Inner) for %.1fs",
                  getDisneyColorName(outer), getDisneyColorName(inner), secs);
@@ -380,6 +454,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
         nextState.colors[4] = getDisneyColor(c_br);
         nextState.colors[0] = getDisneyColor(c_bl);
         nextState.colors[1] = getDisneyColor(c_tl);
+        triggered = true;
         snprintf(
             logBuffer, sizeof(logBuffer),
             "Action: Multi-Burst [TL:%s, BL:%s, BR:%s, TR:%s, CN:%s] for %.1fs",
@@ -388,6 +463,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
             getDisneyColorName(c_cn), secs);
       } else if (subAction == 0x0B) {
         nextState.mode = MODE_COMET;
+        triggered = true;
         snprintf(logBuffer, sizeof(logBuffer),
                  "Action: Dual Green Comet Chase for %.1fs", secs);
       } else if (subAction == 0x0C && mfgData.length() >= actionIdx + 7) {
@@ -426,6 +502,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
           snprintf(logBuffer, sizeof(logBuffer),
                    "Action: Unknown 0C Show Signature for %.1fs", secs);
         }
+        triggered = true;
       } else if (subAction == 0x0E && mfgData.length() >= actionIdx + 10) {
         // E9 0E: The "Zoned Action" Mode
         // Timing is at actionIdx + 3 (Index 7)
@@ -454,6 +531,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
           nextState.zoneFlashing[i] = false;
           nextState.zoneTimers[i] = 0;
         }
+        triggered = true;
         snprintf(logBuffer, sizeof(logBuffer),
                  "Action: Zoned Action (%02X) for %.1fs", sig, secs);
       } else {
@@ -474,8 +552,82 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       indicatorTimer = millis();
       digitalWrite(ONBOARD_LED_PIN, LED_ACTIVE_STATE);
     }
+
+    // LOG EVERY UNIQUE E9 BROADCAST
+    if (hasE9) {
+      logUnknown(mfgData);
+    }
   }
 };
+
+void handleSerialCommands() {
+  if (Serial.available() > 0) {
+    String cmd = Serial.readStringUntil('\n');
+    cmd.trim();
+    
+    if (cmd == "printlogs") {
+      Serial.println("\n--- START OF UNKNOWN LOGS ---");
+      if (LittleFS.exists(LOG_FILE)) {
+        File file = LittleFS.open(LOG_FILE, FILE_READ);
+        while (file.available()) {
+          Serial.println(file.readStringUntil('\n'));
+        }
+        file.close();
+      }
+      Serial.println("--- END OF UNKNOWN LOGS ---\n");
+    } 
+    else if (cmd == "clearlogs") {
+      LittleFS.remove(LOG_FILE);
+      loggedPackets.clear();
+      Serial.println("[LOGGER] Logs cleared.");
+    }
+    else if (cmd == "startweb") {
+      if (webServerStarted) {
+        Serial.println("[WEB] Server already running.");
+        return;
+      }
+      
+      WiFi.softAP("MB-Scanner-Logs", "magicband123");
+      IPAddress IP = WiFi.softAPIP();
+      
+      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+        String html = "<html><head><title>MagicBand+ Logs</title>";
+        html += "<style>body{font-family:sans-serif;background:#121212;color:white;text-align:center;padding:50px;}";
+        html += ".btn{display:inline-block;padding:15px 25px;margin:10px;background:#6200ee;color:white;text-decoration:none;border-radius:8px;font-weight:bold;}";
+        html += ".btn-red{background:#cf6679;}</style></head><body>";
+        html += "<h1>MagicBand+ Log Manager</h1>";
+        html += "<p>Total Unique Packets Captured: " + String(loggedPackets.size()) + "</p>";
+        html += "<a href='/download' class='btn'>Download Log File</a><br>";
+        html += "<a href='/clear' class='btn btn-red' onclick=\"return confirm('Clear all logs?')\">Clear All Logs</a>";
+        html += "</body></html>";
+        request->send(200, "text/html", html);
+      });
+
+      server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request){
+        request->send(LittleFS, LOG_FILE, "text/plain", true);
+      });
+
+      server.on("/clear", HTTP_GET, [](AsyncWebServerRequest *request){
+        LittleFS.remove(LOG_FILE);
+        loggedPackets.clear();
+        request->redirect("/");
+      });
+
+      server.begin();
+      webServerStarted = true;
+      Serial.println("[WEB] Server Started!");
+      Serial.print("[WEB] Connect to 'MB-Scanner-Logs' (pass: magicband123) and go to http://");
+      Serial.println(IP);
+    }
+    else if (cmd == "stopweb") {
+      if (!webServerStarted) return;
+      server.end();
+      WiFi.softAPdisconnect(true);
+      webServerStarted = false;
+      Serial.println("[WEB] Server and WiFi stopped.");
+    }
+  }
+}
 
 void updateAnimations() {
   if (newCommandReceived) {
@@ -649,8 +801,17 @@ void setup() {
   // Reduce heat by underclocking CPU to 80MHz (plenty for BLE and LED)
   setCpuFrequencyMhz(80);
 
-  delay(2000);
   Serial.begin(115200);
+  delay(1000);
+  
+  Serial.println("MagicBand+ Listener Starting...");
+
+  if(!LittleFS.begin(true)){
+    Serial.println("LittleFS Mount Failed");
+  } else {
+    loadLogs();
+  }
+
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS)
       .setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(BRIGHTNESS);
@@ -675,6 +836,7 @@ void setup() {
 }
 
 void loop() {
+  handleSerialCommands();
   updateAnimations();
 
   if (indicatorActive && (millis() - indicatorTimer > 100)) {
