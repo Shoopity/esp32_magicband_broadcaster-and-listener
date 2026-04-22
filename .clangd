@@ -1,0 +1,5 @@
+Diagnostics:
+  Suppress: [member_redeclared]
+
+CompileFlags:
+  Remove: [-fstrict-volatile-bitfields, -fno-tree-switch-conversion, -mshort-calls]
