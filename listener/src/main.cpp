@@ -1,15 +1,16 @@
 
 #include <Arduino.h>
-#include <FastLED.h>
-#include <NimBLEDevice.h>
-#include <LittleFS.h>
-#include <set>
-#include <WiFi.h>
 #include <ESPAsyncWebServer.h>
+#include <FastLED.h>
+#include <LittleFS.h>
+#include <NimBLEDevice.h>
+#include <WiFi.h>
+#include <set>
+
 
 // --- LOGGING ---
 #define LOG_FILE "/unknown.txt"
-std::set<String> loggedPackets; 
+std::set<String> loggedPackets;
 AsyncWebServer server(80);
 bool webServerStarted = false;
 
@@ -262,11 +263,13 @@ void logUnknown(std::string data) {
   String hex = "";
   for (size_t i = 0; i < data.length(); i++) {
     uint8_t b = (uint8_t)data[i];
-    if (b < 0x10) hex += "0";
+    if (b < 0x10)
+      hex += "0";
     hex += String(b, HEX);
   }
-  
-  if (loggedPackets.count(hex) > 0) return; // Already seen
+
+  if (loggedPackets.count(hex) > 0)
+    return; // Already seen
 
   Serial.print("[LOGGER] New Unknown: ");
   Serial.println(hex);
@@ -275,22 +278,24 @@ void logUnknown(std::string data) {
   if (file) {
     file.println(hex);
     file.close();
-    loggedPackets.insert(hex); 
+    loggedPackets.insert(hex);
   }
 }
 
 void loadLogs() {
-  if (!LittleFS.exists(LOG_FILE)) return;
+  if (!LittleFS.exists(LOG_FILE))
+    return;
   File file = LittleFS.open(LOG_FILE, FILE_READ);
-  if (!file) return;
+  if (!file)
+    return;
   while (file.available()) {
     String line = file.readStringUntil('\n');
     line.trim();
-    if (line.length() > 0) loggedPackets.insert(line);
+    if (line.length() > 0)
+      loggedPackets.insert(line);
   }
   file.close();
 }
-
 
 class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice *advertisedDevice) {
@@ -319,7 +324,8 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       if (c == 0xE9 || c == 0xCC) {
         actionIdx = i;
         primaryCode = c;
-        if (c == 0xE9) hasE9 = true;
+        if (c == 0xE9)
+          hasE9 = true;
         break;
       }
     }
@@ -332,7 +338,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       // Broadcasters (Show Nodes) are usually 5 bytes: 83 01 CC 03 00 (length
       // 5) MB replies are usually 18-20+ bytes.
       if (mfgData.length() < 7) {
-        triggered = true; 
+        triggered = true;
       }
       return;
     }
@@ -542,7 +548,7 @@ void handleSerialCommands() {
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
-    
+
     if (cmd == "printlogs") {
       Serial.println("\n--- START OF UNKNOWN LOGS ---");
       if (LittleFS.exists(LOG_FILE)) {
@@ -553,39 +559,42 @@ void handleSerialCommands() {
         file.close();
       }
       Serial.println("--- END OF UNKNOWN LOGS ---\n");
-    } 
-    else if (cmd == "clearlogs") {
+    } else if (cmd == "clearlogs") {
       LittleFS.remove(LOG_FILE);
       loggedPackets.clear();
       Serial.println("[LOGGER] Logs cleared.");
-    }
-    else if (cmd == "startweb") {
+    } else if (cmd == "startweb") {
       if (webServerStarted) {
         Serial.println("[WEB] Server already running.");
         return;
       }
-      
+
       WiFi.softAP("MB-Scanner-Logs", "magicband123");
       IPAddress IP = WiFi.softAPIP();
-      
-      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request){
+
+      server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
         String html = "<html><head><title>MagicBand+ Logs</title>";
-        html += "<style>body{font-family:sans-serif;background:#121212;color:white;text-align:center;padding:50px;}";
-        html += ".btn{display:inline-block;padding:15px 25px;margin:10px;background:#6200ee;color:white;text-decoration:none;border-radius:8px;font-weight:bold;}";
+        html += "<style>body{font-family:sans-serif;background:#121212;color:"
+                "white;text-align:center;padding:50px;}";
+        html += ".btn{display:inline-block;padding:15px "
+                "25px;margin:10px;background:#6200ee;color:white;text-"
+                "decoration:none;border-radius:8px;font-weight:bold;}";
         html += ".btn-red{background:#cf6679;}</style></head><body>";
         html += "<h1>MagicBand+ Log Manager</h1>";
-        html += "<p>Total Unique Packets Captured: " + String(loggedPackets.size()) + "</p>";
+        html += "<p>Total Unique Packets Captured: " +
+                String(loggedPackets.size()) + "</p>";
         html += "<a href='/download' class='btn'>Download Log File</a><br>";
-        html += "<a href='/clear' class='btn btn-red' onclick=\"return confirm('Clear all logs?')\">Clear All Logs</a>";
+        html += "<a href='/clear' class='btn btn-red' onclick=\"return "
+                "confirm('Clear all logs?')\">Clear All Logs</a>";
         html += "</body></html>";
         request->send(200, "text/html", html);
       });
 
-      server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request){
+      server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(LittleFS, LOG_FILE, "text/plain", true);
       });
 
-      server.on("/clear", HTTP_GET, [](AsyncWebServerRequest *request){
+      server.on("/clear", HTTP_GET, [](AsyncWebServerRequest *request) {
         LittleFS.remove(LOG_FILE);
         loggedPackets.clear();
         request->redirect("/");
@@ -594,11 +603,12 @@ void handleSerialCommands() {
       server.begin();
       webServerStarted = true;
       Serial.println("[WEB] Server Started!");
-      Serial.print("[WEB] Connect to 'MB-Scanner-Logs' (pass: magicband123) and go to http://");
+      Serial.print("[WEB] Connect to 'MB-Scanner-Logs' (pass: magicband123) "
+                   "and go to http://");
       Serial.println(IP);
-    }
-    else if (cmd == "stopweb") {
-      if (!webServerStarted) return;
+    } else if (cmd == "stopweb") {
+      if (!webServerStarted)
+        return;
       server.end();
       WiFi.softAPdisconnect(true);
       webServerStarted = false;
@@ -781,10 +791,10 @@ void setup() {
 
   Serial.begin(115200);
   delay(1000);
-  
+
   Serial.println("MagicBand+ Listener Starting...");
 
-  if(!LittleFS.begin(true)){
+  if (!LittleFS.begin(true)) {
     Serial.println("LittleFS Mount Failed");
   } else {
     loadLogs();
