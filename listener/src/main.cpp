@@ -1,4 +1,3 @@
-
 #include <Arduino.h>
 #include <ESPAsyncWebServer.h>
 #include <FastLED.h>
@@ -7,7 +6,7 @@
 #include <WiFi.h>
 #include <set>
 
-// --- LOGGING ---
+// --- SYSTEM CONFIG ---
 #define LOG_FILE "/unknown.txt"
 std::set<String> loggedPackets;
 AsyncWebServer server(80);
@@ -15,45 +14,46 @@ bool webServerStarted = false;
 
 #ifndef LED_PIN
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
-#define LED_PIN 8 // Common WS2812 pin for ESP32-C3
+#define LED_PIN 8
 #else
-#define LED_PIN 15 // Default for ESP32 WROOM
+#define LED_PIN 15
 #endif
 #endif
+
 #ifndef NUM_LEDS
 #define NUM_LEDS 148
 #endif
-#define MOSFET_PIN 4 // Pin to toggle LED strip power via MOSFET
+
+#define MOSFET_PIN 4
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];
 #define BRIGHTNESS 64
 
-// Indicator Config
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
-#define ONBOARD_LED_PIN                                                        \
-  9 // Many C3 boards use 9 or 8. (Change this if your blue LED is on another
-    // pin)
-#define LED_ACTIVE_STATE LOW // C3 blue LEDs are often active-low
+#define ONBOARD_LED_PIN 9
+#define LED_ACTIVE_STATE LOW
 #else
-#define ONBOARD_LED_PIN 2     // WROOM built-in blue LED
-#define LED_ACTIVE_STATE HIGH // WROOM blue LEDs are active-high
+#define ONBOARD_LED_PIN 2
+#define LED_ACTIVE_STATE HIGH
 #endif
 
 uint32_t indicatorTimer = 0;
 bool indicatorActive = false;
 
-// Layout Config: Zone Map (0-4 for each LED)
+// --- LAYOUT & ZONES ---
 uint8_t zoneMap[NUM_LEDS];
 
 void setZoneRange(uint8_t zone, int start, int end) {
+  uint8_t zIdx = (zone > 0) ? zone - 1 : 0; // Convert 1-indexed to 0-indexed
   for (int i = start; i <= end; i++) {
-    if (i >= 0 && i < NUM_LEDS)
-      zoneMap[i] = zone;
+    if (i >= 0 && i < NUM_LEDS && zIdx < 5) {
+      zoneMap[i] = zIdx;
+    }
   }
 }
 
-// Animation State
+// --- ANIMATION ENGINE ---
 enum AnimationMode {
   MODE_SOLID,
   MODE_DUAL,
@@ -63,12 +63,14 @@ enum AnimationMode {
   MODE_STROBE,
   MODE_STEPPER,
   MODE_RAINBOW,
-  MODE_FLASH_WHITE,
-  MODE_FLASH_PURPLE,
   MODE_FLASH_CHOOSE,
-  MODE_FADE_TO_PURPLE,
-  MODE_GREEN_PURPLE_FLASH,
-  MODE_ZONE_TWINKLE
+  MODE_ZONE_TWINKLE,
+  MODE_CANDLES,
+  MODE_PULSE_Z3,
+  MODE_BLOOD_ORANGE_CYCLE,
+  MODE_CYAN_DIM_COMET,
+  MODE_WILD_SPARKLE,
+  MODE_YELLOW_DOUBLE_COMET
 };
 
 struct AnimationState {
@@ -78,21 +80,18 @@ struct AnimationState {
   bool isAlwaysOn;
   CRGB colors[5];
   uint8_t colorIndices[5];
-  CRGB stepColors[5][3]; // Sub-palette for Stepper mode
-  uint8_t stepHues[5];   // Hue offsets for Zone Rainbow
+  CRGB stepColors[5][3];
+  uint8_t stepHues[5];
   uint32_t zoneTimers[5];
   bool zoneFlashing[5];
-  uint8_t zoneFlashColor[5];
   uint32_t triggerTime;
   bool active;
-  uint32_t lastSubStep;
 };
 
 volatile bool newCommandReceived = false;
 AnimationState nextState;
 AnimationState activeState = {MODE_SOLID, 0, 0, false};
 
-// Debouncing
 struct LastPacket {
   std::string data;
   std::string addr;
@@ -100,7 +99,7 @@ struct LastPacket {
 };
 LastPacket lastSeen = {"", "", 0};
 
-// --- Disney Timing Decoder ---
+// --- HELPERS ---
 void parseTiming(uint8_t b, AnimationState &state) {
   uint8_t value = b & 0x0F;
   uint8_t fadeBits = (b >> 4) & 0x03;
@@ -113,116 +112,43 @@ void parseTiming(uint8_t b, AnimationState &state) {
   state.isAlwaysOn = alwaysOnBit;
 }
 
-// --- Disney Palette Logic ---
-const char *getDisneyColorName(uint8_t rawByte) {
-  uint8_t index = (rawByte & 0x1F);
-  switch (index) {
-  case 0:
-    return "cyan";
-  case 1:
-    return "light blue";
-  case 2:
-    return "blue";
-  case 3:
-    return "dim purple";
-  case 4:
-    return "midnight blue";
-  case 5:
-    return "bright lavender";
-  case 6:
-    return "white";
-  case 7:
-    return "purple";
-  case 8:
-    return "bright pink";
-  case 9:
-    return "light pink";
-  case 10:
-    return "lighter pink";
-  case 11:
-    return "lighter pink 2";
-  case 12:
-    return "bright pink 2";
-  case 13:
-    return "bright pink 3";
-  case 14:
-    return "pink/red";
-  case 15:
-    return "yellow orange";
-  case 16:
-    return "light yellow";
-  case 17:
-    return "yellow";
-  case 18:
-    return "lime";
-  case 19:
-    return "orange";
-  case 20:
-    return "red orange";
-  case 21:
-    return "red";
-  case 22:
-    return "bright cyan";
-  case 23:
-    return "bright cyan 2";
-  case 24:
-    return "dark cyan";
-  case 25:
-    return "green";
-  case 26:
-    return "lime green";
-  case 27:
-    return "bright light blue";
-  case 28:
-    return "bright light blue 2";
-  case 29:
-    return "black";
-  case 30:
-    return "purple-ish";
-  case 31:
-    return "random";
-  default:
-    return "Unknown";
-  }
-}
-
 CRGB getDisneyColor(uint8_t rawByte) {
   uint8_t index = (rawByte & 0x1F);
   switch (index) {
   case 0:
     return CRGB::Cyan;
   case 1:
-    return 0xADD8E6; // light blue
+    return 0xADD8E6;
   case 2:
     return CRGB::Blue;
   case 3:
-    return 0x4B0082; // dim purple
+    return 0x4B0082;
   case 4:
     return CRGB::MidnightBlue;
   case 5:
-    return 0xE6E6FA; // bright lavender
+    return 0xE6E6FA;
   case 6:
     return CRGB::White;
   case 7:
     return CRGB::Purple;
   case 8:
-    return 0xFF007F; // bright pink
+    return 0xFF007F;
   case 9:
     return CRGB::LightPink;
   case 10:
-    return 0xFFB6C1; // lighter pink
+    return 0xFFB6C1;
   case 11:
-    return 0xFFC0CB; // lighter pink 2
+    return 0xFFC0CB;
   case 12:
-    return 0xFF1493; // bright pink 2
+    return 0xFF1493;
   case 13:
-    return 0xFF69B4; // bright pink 3
+    return 0xFF69B4;
   case 14:
-    return 0xFF0033; // pink/red
+    return 0xFF0033;
   case 15:
-    return 0xFFAB00; // yellow orange
+    return 0xFFAB00;
   case 16:
-    return 0xFFFFE0; // light yellow
+    return 0xFFFFE0;
   case 17:
     return CRGB::Yellow;
   case 18:
@@ -230,27 +156,27 @@ CRGB getDisneyColor(uint8_t rawByte) {
   case 19:
     return CRGB::Orange;
   case 20:
-    return 0xFF4500; // red orange
+    return 0xFF4500;
   case 21:
     return CRGB::Red;
   case 22:
-    return 0x00FFFF; // bright cyan
+    return 0x00FFFF;
   case 23:
-    return 0x00CED1; // bright cyan 2
+    return 0x00CED1;
   case 24:
-    return 0x008B8B; // dark cyan
+    return 0x008B8B;
   case 25:
     return CRGB::Green;
   case 26:
     return CRGB::LimeGreen;
   case 27:
-    return 0x00BFFF; // bright light blue
+    return 0x00BFFF;
   case 28:
-    return 0x87CEFA; // bright light blue 2
+    return 0x87CEFA;
   case 29:
     return CRGB::Black;
   case 30:
-    return 0x800080; // purple-ish
+    return 0x800080;
   case 31:
     return CHSV(random8(), 255, 255);
   default:
@@ -258,7 +184,7 @@ CRGB getDisneyColor(uint8_t rawByte) {
   }
 }
 
-void logUnknown(std::string data) {
+bool logUnknown(std::string data) {
   String hex = "";
   for (size_t i = 0; i < data.length(); i++) {
     uint8_t b = (uint8_t)data[i];
@@ -266,19 +192,16 @@ void logUnknown(std::string data) {
       hex += "0";
     hex += String(b, HEX);
   }
-
   if (loggedPackets.count(hex) > 0)
-    return; // Already seen
-
-  Serial.print("[LOGGER] New Unknown: ");
-  Serial.println(hex);
-
+    return false;
+  loggedPackets.insert(hex);
   File file = LittleFS.open(LOG_FILE, FILE_APPEND);
   if (file) {
     file.println(hex);
     file.close();
-    loggedPackets.insert(hex);
+    return true;
   }
+  return false;
 }
 
 void loadLogs() {
@@ -296,6 +219,7 @@ void loadLogs() {
   file.close();
 }
 
+// --- BLE CALLBACKS ---
 class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
   void onResult(NimBLEAdvertisedDevice *advertisedDevice) {
     std::string mfgData = advertisedDevice->getManufacturerData();
@@ -313,297 +237,175 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     lastSeen.addr = addr;
     lastSeen.timestamp = millis();
 
-    bool triggered = false;
-    bool hasE9 = false;
-
     int actionIdx = -1;
-    uint8_t primaryCode = 0;
-    for (int i = 2; i < mfgData.length(); i++) {
+    for (int i = 0; i < mfgData.length(); i++) {
       uint8_t c = (uint8_t)mfgData[i];
       if (c == 0xE9 || c == 0xCC) {
         actionIdx = i;
-        primaryCode = c;
-        if (c == 0xE9)
-          hasE9 = true;
         break;
       }
     }
-
-    if (actionIdx == -1)
+    if (actionIdx == -1 || (uint8_t)mfgData[actionIdx] == 0xCC)
       return;
 
-    // 1. PING: Logic to ignore MB respondents
-    if (primaryCode == 0xCC) {
-      // Broadcasters (Show Nodes) are usually 5 bytes: 83 01 CC 03 00 (length
-      // 5) MB replies are usually 18-20+ bytes.
-      if (mfgData.length() < 7) {
-        triggered = true;
-      }
-      return;
+    String showCode = "";
+    for (size_t i = actionIdx; i < mfgData.length(); i++) {
+      uint8_t b = (uint8_t)mfgData[i];
+      if (b < 0x10)
+        showCode += "0";
+      showCode += String(b, HEX);
     }
 
-    // SHOW ACTION (E9)
-    if (primaryCode == 0xE9 && mfgData.length() > actionIdx + 3) {
-      static uint32_t lastE9Trigger = 0;
-      if (millis() - lastE9Trigger < 2500)
-        return; // Hard debounce on ANY E9 packet to fix broadcaster spam
-      lastE9Trigger = millis();
+    uint8_t subAction = (uint8_t)mfgData[actionIdx + 1];
+    parseTiming((uint8_t)mfgData[actionIdx + 3], nextState);
+    nextState.triggerTime = millis();
+    nextState.active = false;
+    uint8_t vib = (uint8_t)mfgData[mfgData.length() - 1];
+    bool triggered = false;
 
-      uint8_t subAction = (uint8_t)mfgData[actionIdx + 1];
-      nextState.active = false;
-
-      if (subAction == 0x0E && mfgData.length() > actionIdx + 3) {
-        parseTiming((uint8_t)mfgData[actionIdx + 3],
-                    nextState); // 0E timing byte is the signature byte itself
-      } else {
-        parseTiming((uint8_t)mfgData[actionIdx + 3], nextState);
+    if (subAction == 0x05) {
+      nextState.mode = MODE_SOLID;
+      uint8_t c = (uint8_t)mfgData[actionIdx + 5];
+      uint8_t mask = (c >> 5) & 0x07;
+      CRGB color = getDisneyColor(c);
+      for (int i = 0; i < 5; i++)
+        nextState.colors[i] =
+            (mask == 0 || mask == 5 || mask == 7) ? color : CRGB::Black;
+      if (mask == 3)
+        nextState.colors[0] = color;
+      if (mask == 4)
+        nextState.colors[1] = color;
+      if (mask == 1 || mask == 6)
+        nextState.colors[2] = color;
+      if (mask == 2)
+        nextState.colors[3] = color;
+      triggered = true;
+    } else if (subAction == 0x06) {
+      nextState.mode = MODE_DUAL;
+      nextState.colors[2] = getDisneyColor((uint8_t)mfgData[actionIdx + 5]);
+      nextState.colors[0] = nextState.colors[1] = nextState.colors[3] =
+          nextState.colors[4] = getDisneyColor((uint8_t)mfgData[actionIdx + 6]);
+      triggered = true;
+    } else if (subAction == 0x09) {
+      nextState.mode = MODE_BURST;
+      for (int i = 0; i < 5; i++)
+        nextState.colors[i] =
+            getDisneyColor((uint8_t)mfgData[actionIdx + 5 + i]);
+      triggered = true;
+    } else if (subAction == 0x0B) {
+      nextState.mode = MODE_COMET;
+      triggered = true;
+    } else if (subAction == 0x0C) {
+      uint8_t s0 = (uint8_t)mfgData[actionIdx + 5];
+      uint8_t s1 = (uint8_t)mfgData[actionIdx + 6];
+      uint8_t s2 = (uint8_t)mfgData[actionIdx + 7];
+      if (s0 == 0x5D && s1 == 0x46 && s2 == 0x5B) {
+        if (vib == 0x95)
+          nextState.mode = MODE_FADE;
+        else {
+          nextState.mode = MODE_RAINBOW;
+          for (int s = 0; s < 5; s++)
+            nextState.stepHues[s] = s * 51;
+        }
+      } else if (s0 == 0x4F && s1 == 0x4F && s2 == 0x5B) {
+        nextState.mode = MODE_STROBE;
+      } else if (s0 == 0xB1 && s1 == 0xB9 && s2 == 0xB5) {
+        nextState.mode = MODE_STEPPER;
+        CRGB palette[] = {CRGB::Red, CRGB::Green, CRGB::Yellow, CRGB::Blue};
+        for (int s = 0; s < 5; s++) {
+          for (int p = 0; p < 3; p++) {
+            nextState.stepColors[s][p] = palette[random8(4)];
+          }
+        }
       }
-
-      nextState.triggerTime = millis();
-      nextState.lastSubStep = 0;
-
-      char logBuffer[128];
-      float secs = nextState.durationMs / 1000.0f;
-      uint8_t vib = (uint8_t)mfgData[mfgData.length() - 1];
-
-      if (subAction == 0x05 && mfgData.length() >= actionIdx + 6) {
-        nextState.mode = MODE_SOLID;
-        uint8_t c = (uint8_t)mfgData[actionIdx + 5];
-        uint8_t mask = (c >> 5) & 0x07;
-        CRGB color = getDisneyColor(c);
-
-        // Default: Clear all zones
-        for (int i = 0; i < 5; i++) {
-          nextState.colors[i] = CRGB::Black;
-          nextState.colorIndices[i] = 29;
-        }
-
-        if (mask == 0 || mask == 5 || mask == 7) {
-          // All zones (000, 101, 111)
-          for (int i = 0; i < 5; i++) {
-            nextState.colors[i] = color;
-            nextState.colorIndices[i] = c;
-          }
-          triggered = true;
-        } else {
-          // Specific zone (Matching EMCOT's Mask Palette)
-          int targetZone = -1;
-          switch (mask) {
-          case 1:
-          case 6:
-            targetZone = 3;
-            break; // Mask 1 & 6: Top Right (Zone 4)
-          case 2:
-            targetZone = 4;
-            break; // Mask 2: Bottom Right (Zone 5)
-          case 3:
-            targetZone = 0;
-            break; // Mask 3: Bottom Left (Zone 1)
-          case 4:
-            targetZone = 1;
-            break; // Mask 4: Top Left (Zone 2)
-          }
-          if (targetZone != -1) {
-            nextState.colors[targetZone] = color;
-            nextState.colorIndices[targetZone] = c;
-            triggered = true;
-          }
-        }
-        snprintf(logBuffer, sizeof(logBuffer),
-                 "Action: Solid %s (Mask:%d) for %.1fs", getDisneyColorName(c),
-                 mask, secs);
-      } else if (subAction == 0x06 && mfgData.length() >= actionIdx + 7) {
-        nextState.mode = MODE_DUAL;
-        uint8_t inner = (uint8_t)mfgData[actionIdx + 5];
-        uint8_t outer = (uint8_t)mfgData[actionIdx + 6];
-        nextState.colors[2] = getDisneyColor(inner);
-        nextState.colorIndices[2] = inner;
-        nextState.colors[0] = nextState.colors[1] = nextState.colors[3] =
-            nextState.colors[4] = getDisneyColor(outer);
-        triggered = true;
-        snprintf(logBuffer, sizeof(logBuffer),
-                 "Action: Dual Colors %s (Outer) & %s (Inner) for %.1fs",
-                 getDisneyColorName(outer), getDisneyColorName(inner), secs);
-      } else if (subAction == 0x09 && mfgData.length() >= actionIdx + 10) {
-        nextState.mode = MODE_BURST;
-        uint8_t c_cn = (uint8_t)mfgData[actionIdx + 5];
-        uint8_t c_tr = (uint8_t)mfgData[actionIdx + 6];
-        uint8_t c_br = (uint8_t)mfgData[actionIdx + 7];
-        uint8_t c_bl = (uint8_t)mfgData[actionIdx + 8];
-        uint8_t c_tl = (uint8_t)mfgData[actionIdx + 9];
-        nextState.colors[2] = getDisneyColor(c_cn);
-        nextState.colors[3] = getDisneyColor(c_tr);
-        nextState.colors[4] = getDisneyColor(c_br);
-        nextState.colors[0] = getDisneyColor(c_bl);
-        nextState.colors[1] = getDisneyColor(c_tl);
-        triggered = true;
-        snprintf(
-            logBuffer, sizeof(logBuffer),
-            "Action: Multi-Burst [TL:%s, BL:%s, BR:%s, TR:%s, CN:%s] for %.1fs",
-            getDisneyColorName(c_tl), getDisneyColorName(c_bl),
-            getDisneyColorName(c_br), getDisneyColorName(c_tr),
-            getDisneyColorName(c_cn), secs);
-      } else if (subAction == 0x0B) {
-        nextState.mode = MODE_COMET;
-        triggered = true;
-        snprintf(logBuffer, sizeof(logBuffer),
-                 "Action: Dual Green Comet Chase for %.1fs", secs);
-      } else if (subAction == 0x0C && mfgData.length() >= actionIdx + 7) {
-        uint8_t sig0 = (uint8_t)mfgData[actionIdx + 5],
-                sig1 = (uint8_t)mfgData[actionIdx + 6],
-                sig2 = (uint8_t)mfgData[actionIdx + 7];
-        if (sig0 == 0x5D && sig1 == 0x46 && sig2 == 0x5B) {
-          if (vib == 0x95) {
-            nextState.mode = MODE_FADE;
-            snprintf(logBuffer, sizeof(logBuffer),
-                     "Action: Sequential White/Pink Fade for %.1fs", secs);
-          } else {
-            nextState.mode = MODE_RAINBOW;
-            for (int s = 0; s < 5; s++)
-              nextState.stepHues[s] = s * 51; // Space hues evenly around wheel
-            snprintf(logBuffer, sizeof(logBuffer),
-                     "Action: 3s Zone Rainbow for %.1fs", secs);
-          }
-        } else if (sig0 == 0x4F && sig1 == 0x4F && sig2 == 0x5B) {
-          nextState.mode = MODE_STROBE;
-          snprintf(logBuffer, sizeof(logBuffer),
-                   "Action: Yellow/Orange/Off Strobe Cycle for %.1fs", secs);
-        } else if (sig0 == 0xB1 && sig1 == 0xB9 && sig2 == 0xB5) {
-          nextState.mode = MODE_STEPPER;
-          CRGB palette[] = {CRGB::Red, CRGB::Green, CRGB::Yellow, CRGB::Blue};
-          for (int s = 0; s < 5; s++) {
-            for (int p = 0; p < 3; p++)
-              nextState.stepColors[s][p] = palette[random8(4)];
-          }
-          snprintf(logBuffer, sizeof(logBuffer),
-                   "Action: Multi-Zone Color Step for %.1fs", secs);
-        } else {
-          nextState.mode = MODE_SOLID;
-          for (int i = 0; i < 5; i++)
-            nextState.colors[i] = CRGB::White;
-          snprintf(logBuffer, sizeof(logBuffer),
-                   "Action: Unknown 0C Show Signature for %.1fs", secs);
-        }
-        triggered = true;
-      } else if (subAction == 0x0E && mfgData.length() >= actionIdx + 10) {
-        // E9 0E: The "Zoned Action" Mode
-        // Timing is at actionIdx + 3 (Index 7)
-        parseTiming((uint8_t)mfgData[actionIdx + 3], nextState);
-
-        // Signature is the 4th byte from the end
-        uint8_t sig = (uint8_t)mfgData[mfgData.length() - 4];
-
-        // Colors are 5 bytes starting from actionIdx + 5 (Index 9)
-        for (int i = 0; i < 5; i++) {
-          uint8_t colorByte = (uint8_t)mfgData[actionIdx + 5 + i];
-          nextState.colors[i] = getDisneyColor(colorByte);
-          nextState.colorIndices[i] = colorByte;
-        }
-
-        if (sig == 0x0B) {
-          nextState.mode = MODE_ZONE_TWINKLE;
-          nextState.durationMs = 20000; // 20s run
-          nextState.fadeOutMs = 2000;   // 2s fade
-        } else {
-          // 02, FB, etc are variations of Independent Flash
-          nextState.mode = MODE_FLASH_CHOOSE; // Uses colors[i] independently
-        }
-
-        for (int i = 0; i < 5; i++) {
-          nextState.zoneFlashing[i] = false;
-          nextState.zoneTimers[i] = 0;
-        }
-        triggered = true;
-        snprintf(logBuffer, sizeof(logBuffer),
-                 "Action: Zoned Action (%02X) for %.1fs", sig, secs);
-      } else {
-        nextState.mode = MODE_SOLID;
-        for (int i = 0; i < 5; i++)
-          nextState.colors[i] = CRGB::White;
-        snprintf(logBuffer, sizeof(logBuffer),
-                 "Action: Unknown Mode (%02X) Default for %.1fs", subAction,
-                 secs);
+      triggered = true;
+    } else if (subAction == 0x0E) {
+      uint8_t sig = (uint8_t)mfgData[mfgData.length() - 4];
+      nextState.mode = (sig == 0x0B) ? MODE_ZONE_TWINKLE : MODE_FLASH_CHOOSE;
+      if (sig == 0x0B)
+        nextState.durationMs = 20000;
+      for (int i = 0; i < 5; i++) {
+        nextState.colors[i] =
+            getDisneyColor((uint8_t)mfgData[actionIdx + 5 + i]);
+        nextState.zoneFlashing[i] = false;
+        nextState.zoneTimers[i] = 0;
       }
+      triggered = true;
+    } else if (subAction == 0x0F) {
+      if (showCode.indexOf("2a0717b8") != -1)
+        nextState.mode = MODE_CANDLES;
+      else if (showCode.indexOf("021200b0") != -1)
+        nextState.mode = MODE_PULSE_Z3;
+      triggered = true;
+    } else if (subAction == 0x10) {
+      if (showCode.indexOf("2102") != -1) {
+        nextState.mode = MODE_BLOOD_ORANGE_CYCLE;
+        nextState.durationMs = 30000;
+      } else if (showCode.indexOf("4e07b0") != -1)
+        nextState.mode = MODE_CYAN_DIM_COMET;
+      triggered = true;
+    }
 
-      Serial.println(logBuffer);
+    if (triggered) {
+      Serial.println("[BLE] Triggered: " + showCode);
       nextState.active = true;
       newCommandReceived = true;
-
-      // Trigger onboard flash
       indicatorActive = true;
       indicatorTimer = millis();
       digitalWrite(ONBOARD_LED_PIN, LED_ACTIVE_STATE);
-    }
-
-    // --- SECONDARY ACTION: LOGGING ---
-    // We do this at the very end so the animation state is already triggered.
-    if (primaryCode != 0xCC) {
-      logUnknown(mfgData);
+    } else {
+      if (logUnknown(mfgData)) {
+        nextState.mode = MODE_WILD_SPARKLE;
+        nextState.durationMs = 20000;
+      } else {
+        nextState.mode = MODE_YELLOW_DOUBLE_COMET;
+        nextState.durationMs = 5000;
+      }
+      nextState.active = true;
+      newCommandReceived = true;
     }
   }
 };
 
+// --- LOG MANAGEMENT ---
 void handleSerialCommands() {
   if (Serial.available() > 0) {
     String cmd = Serial.readStringUntil('\n');
     cmd.trim();
-
     if (cmd == "printlogs") {
-      Serial.println("\n--- START OF UNKNOWN LOGS ---");
       if (LittleFS.exists(LOG_FILE)) {
         File file = LittleFS.open(LOG_FILE, FILE_READ);
-        while (file.available()) {
+        while (file.available())
           Serial.println(file.readStringUntil('\n'));
-        }
         file.close();
       }
-      Serial.println("--- END OF UNKNOWN LOGS ---\n");
     } else if (cmd == "clearlogs") {
       LittleFS.remove(LOG_FILE);
       loggedPackets.clear();
-      Serial.println("[LOGGER] Logs cleared.");
     } else if (cmd == "startweb") {
-      if (webServerStarted) {
-        Serial.println("[WEB] Server already running.");
+      if (webServerStarted)
         return;
-      }
-
       WiFi.softAP("MB-Scanner-Logs", "magicband123");
       IPAddress IP = WiFi.softAPIP();
-
       server.on("/", HTTP_GET, [](AsyncWebServerRequest *request) {
-        String html = "<html><head><title>MagicBand+ Logs</title>";
-        html += "<style>body{font-family:sans-serif;background:#121212;color:"
-                "white;text-align:center;padding:50px;}";
-        html += ".btn{display:inline-block;padding:15px "
-                "25px;margin:10px;background:#6200ee;color:white;text-"
-                "decoration:none;border-radius:8px;font-weight:bold;}";
-        html += ".btn-red{background:#cf6679;}</style></head><body>";
-        html += "<h1>MagicBand+ Log Manager</h1>";
-        html += "<p>Total Unique Packets Captured: " +
-                String(loggedPackets.size()) + "</p>";
-        html += "<a href='/download' class='btn'>Download Log File</a><br>";
-        html += "<a href='/clear' class='btn btn-red' onclick=\"return "
-                "confirm('Clear all logs?')\">Clear All Logs</a>";
-        html += "</body></html>";
+        String html =
+            "<html><body><h1>MagicBand+ Logs</h1><p>Unique Captured: " +
+            String(loggedPackets.size()) +
+            "</p><a href='/download'>Download</a><br><a "
+            "href='/clear'>Clear</a></body></html>";
         request->send(200, "text/html", html);
       });
-
       server.on("/download", HTTP_GET, [](AsyncWebServerRequest *request) {
         request->send(LittleFS, LOG_FILE, "text/plain", true);
       });
-
       server.on("/clear", HTTP_GET, [](AsyncWebServerRequest *request) {
         LittleFS.remove(LOG_FILE);
         loggedPackets.clear();
         request->redirect("/");
       });
-
       server.begin();
       webServerStarted = true;
-      Serial.println("[WEB] Server Started!");
-      Serial.print("[WEB] Connect to 'MB-Scanner-Logs' (pass: magicband123) "
-                   "and go to http://");
+      Serial.print("[WEB] Started at http://");
       Serial.println(IP);
     } else if (cmd == "stopweb") {
       if (!webServerStarted)
@@ -611,11 +413,12 @@ void handleSerialCommands() {
       server.end();
       WiFi.softAPdisconnect(true);
       webServerStarted = false;
-      Serial.println("[WEB] Server and WiFi stopped.");
+      Serial.println("[WEB] Server stopped.");
     }
   }
 }
 
+// --- ANIMATION CORE ---
 void updateAnimations() {
   if (newCommandReceived) {
     activeState = nextState;
@@ -628,7 +431,6 @@ void updateAnimations() {
   }
 
   uint32_t elapsed = millis() - activeState.triggerTime;
-  // Hard 30s cut-off or packet-specified duration
   if (elapsed > 30000 ||
       (!activeState.isAlwaysOn && elapsed >= activeState.durationMs)) {
     activeState.active = false;
@@ -637,213 +439,255 @@ void updateAnimations() {
     return;
   }
 
-  uint8_t intensity = beatsin8(60, 150, 255, activeState.triggerTime);
+  uint8_t masterIntensity = 255;
   if (!activeState.isAlwaysOn && activeState.fadeOutMs > 0) {
-    uint32_t fadeStartTime =
-        (activeState.durationMs > activeState.fadeOutMs)
-            ? (activeState.durationMs - activeState.fadeOutMs)
-            : 0;
-    if (elapsed > fadeStartTime) {
-      uint32_t fElap = elapsed - fadeStartTime;
-      if (fElap < activeState.fadeOutMs)
-        intensity = map(fElap, 0, activeState.fadeOutMs, intensity, 0);
-      else
-        intensity = 0;
+    uint32_t fadeStart = (activeState.durationMs > activeState.fadeOutMs)
+                             ? (activeState.durationMs - activeState.fadeOutMs)
+                             : 0;
+    if (elapsed > fadeStart) {
+      masterIntensity = map(elapsed, fadeStart, activeState.durationMs, 255, 0);
     }
   }
 
-  if (activeState.mode == MODE_SOLID || activeState.mode == MODE_DUAL ||
-      activeState.mode == MODE_BURST) {
+  switch (activeState.mode) {
+  case MODE_SOLID:
+  case MODE_DUAL:
+  case MODE_BURST:
     for (int s = 0; s < 5; s++) {
       CRGB c = activeState.colors[s];
-      c.nscale8(intensity);
-      for (int i = 0; i < NUM_LEDS; i++) {
+      c.nscale8(masterIntensity);
+      for (int i = 0; i < NUM_LEDS; i++)
         if (zoneMap[i] == s)
           leds[i] = c;
+    }
+    break;
+
+  case MODE_COMET:
+    FastLED.clear();
+    {
+      uint16_t pos1 = (elapsed % 4000) * NUM_LEDS / 4000;
+      uint16_t pos2 = (pos1 + NUM_LEDS / 2) % NUM_LEDS;
+      for (int i = 0; i < NUM_LEDS / 4; i++) {
+        uint8_t f = 255 - (i * 255 / (NUM_LEDS / 4));
+        leds[(pos1 - i + NUM_LEDS) % NUM_LEDS] = CRGB::Green;
+        leds[(pos1 - i + NUM_LEDS) % NUM_LEDS].nscale8(f);
+        leds[(pos2 - i + NUM_LEDS) % NUM_LEDS] = CRGB::Green;
+        leds[(pos2 - i + NUM_LEDS) % NUM_LEDS].nscale8(f);
       }
     }
-  } else if (activeState.mode == MODE_COMET) {
-    FastLED.clear();
-    uint16_t pos1 = (elapsed % 4000) * NUM_LEDS / 4000;
-    uint16_t pos2 = (pos1 + (NUM_LEDS / 2)) % NUM_LEDS;
-    uint16_t tailLen = NUM_LEDS / 4; // Half distance to following comet
-    for (int i = 0; i < tailLen; i++) {
-      uint8_t fade = 255 - (i * (255 / tailLen));
-      leds[(pos1 - i + NUM_LEDS) % NUM_LEDS] = CRGB::Green;
-      leds[(pos1 - i + NUM_LEDS) % NUM_LEDS].nscale8(fade);
-      leds[(pos2 - i + NUM_LEDS) % NUM_LEDS] = CRGB::Green;
-      leds[(pos2 - i + NUM_LEDS) % NUM_LEDS].nscale8(fade);
-    }
-  } else if (activeState.mode == MODE_RAINBOW) {
-    uint8_t deltaHue = (elapsed * 255 / 3000) % 256;
+    break;
+
+  case MODE_RAINBOW: {
+    uint8_t h = (elapsed * 255 / 3000) % 256;
     for (int i = 0; i < NUM_LEDS; i++) {
-      uint8_t s = zoneMap[i];
-      leds[i] = CHSV(activeState.stepHues[s] + deltaHue, 255, 255);
+      leds[i] = CHSV(activeState.stepHues[zoneMap[i]] + h, 255, 255);
     }
-  } else if (activeState.mode == MODE_FADE) {
+  } break;
+
+  case MODE_FADE: {
     uint32_t cycle = elapsed % 1500;
-    CRGB c1 = CRGB::White,
-         c2 = CRGB(5, 2, 10); // Extremely dim, almost off target color
+    CRGB c1 = CRGB::White, c2 = CRGB(5, 2, 10);
     uint8_t ratio = map(cycle, 0, 1500, 255, 0);
     CRGB c = blend(c2, c1, ratio);
     for (int i = 0; i < NUM_LEDS; i++)
       leds[i] = c;
-  } else if (activeState.mode == MODE_STROBE) {
+  } break;
+
+  case MODE_STROBE: {
     uint32_t cycle = elapsed % 5000;
-    CRGB c = CRGB::Black;
-    if (cycle < 500)
-      c = CRGB::Yellow;
-    else if (cycle < 1000)
-      c = CRGB::Orange;
+    CRGB c = (cycle < 500) ? CRGB::Yellow
+                           : (cycle < 1000 ? CRGB::Orange : CRGB::Black);
     for (int i = 0; i < NUM_LEDS; i++)
       leds[i] = c;
-  } else if (activeState.mode == MODE_STEPPER) {
-    uint8_t stepIdx = (elapsed / 500) % 3;
+  } break;
+
+  case MODE_STEPPER: {
+    uint8_t idx = (elapsed / 500) % 3;
+    for (int i = 0; i < NUM_LEDS; i++)
+      leds[i] = activeState.stepColors[zoneMap[i]][idx];
+  } break;
+
+    case MODE_CANDLES: {
+      // Use a ~60ms interval to slow down the flicker rate
+      static uint32_t lastFlicker = 0;
+      static uint8_t f1 = 255;
+      static uint8_t f2 = 255;
+      if (millis() - lastFlicker > 60) {
+        f1 = random8(60, 255);  // Wider range for more "on/off" feel
+        f2 = random8(40, 255);
+        lastFlicker = millis();
+      }
+      CRGB blue = CRGB::Blue;
+      blue.nscale8(f1);
+      CRGB orange = CRGB(255, 60, 0);
+      orange.nscale8(f2);
+      for (int i = 0; i < NUM_LEDS; i++) {
+        leds[i] = (zoneMap[i] == 2) ? orange : blue;
+      }
+    } break;
+
+  case MODE_PULSE_Z3: {
+    CRGB bg = CRGB::DarkBlue;
+    bg.nscale8(60);
+    uint8_t p = beatsin8(40, 40, 255, activeState.triggerTime);
+    CRGB pink = CRGB::DeepPink;
+    pink.nscale8(p);
     for (int i = 0; i < NUM_LEDS; i++) {
-      uint8_t s = zoneMap[i];
-      leds[i] = activeState.stepColors[s][stepIdx];
+      leds[i] = (zoneMap[i] == 2) ? pink : bg;
     }
-  } else if (activeState.mode == MODE_FLASH_WHITE ||
-             activeState.mode == MODE_FLASH_PURPLE ||
-             activeState.mode == MODE_FLASH_CHOOSE) {
-    FastLED.clear();
-    for (int s = 0; s < 5; s++) {
-      if (!activeState.zoneFlashing[s]) {
-        if (elapsed - activeState.zoneTimers[s] >= 100) { // Fast trigger
-          if (random8() < 32) {
-            activeState.zoneFlashing[s] = true;
-            activeState.zoneTimers[s] = elapsed;
-          }
-        }
+  } break;
+
+    case MODE_BLOOD_ORANGE_CYCLE: {
+      CRGB color = CRGB(255, 60, 0); // Blood Orange
+      
+      // Zones 1 and 5: Pulse opposite over 2 seconds (30 BPM)
+      // p1 starts bright, p2 starts dim.
+      uint8_t p1 = beatsin8(30, 0, 255, activeState.triggerTime, 64);  // Phase 64 = Peak
+      uint8_t p2 = beatsin8(30, 0, 255, activeState.triggerTime, 192); // Phase 192 = Trough
+      
+      // Zones 2, 3, 4: 1.25s cycle (125ms fade in, 1000ms pulse, 125ms fade out)
+      uint32_t localMs = elapsed % 1250;
+      uint8_t zMid = 0;
+      if (localMs < 125) {
+        zMid = map(localMs, 0, 125, 0, 255);
+      } else if (localMs < 1125) {
+        // Dim to 50% (128) and back to Full (255) over 1s.
+        // Phase 64 is peak (255), Phase 192 is trough (128).
+        zMid = beatsin8(60, 128, 255, activeState.triggerTime + 125, 64);
       } else {
-        uint32_t fElap = elapsed - activeState.zoneTimers[s];
-        uint32_t flashDur = 400;
-        if (fElap > flashDur) {
-          activeState.zoneFlashing[s] = false;
-          activeState.zoneTimers[s] = elapsed;
-        } else {
-          CRGB baseColor = activeState.colors[s];
-          uint8_t ratio = map(fElap, 0, flashDur, 255, 0);
-          baseColor.nscale8(ratio);
-          for (int i = 0; i < NUM_LEDS; i++)
-            if (zoneMap[i] == s)
-              leds[i] = baseColor;
-        }
+        zMid = map(localMs, 1125, 1250, 255, 0);
+      }
+
+      for (int i = 0; i < NUM_LEDS; i++) {
+        uint8_t z = zoneMap[i];
+        if (z == 0) leds[i] = color.nscale8(p1);      // Zone 1
+        else if (z == 4) leds[i] = color.nscale8(p2); // Zone 5
+        else if (z >= 1 && z <= 3) leds[i] = color.nscale8(zMid); // Zones 2, 3, 4
+        else leds[i] = CRGB::Black; // Safety for unmapped LEDs
+      }
+    } break;
+
+  case MODE_CYAN_DIM_COMET:
+    FastLED.clear();
+    {
+      uint16_t p = (elapsed % 1200) * NUM_LEDS / 1200;
+      for (int i = 0; i < 15; i++) {
+        uint8_t f = 255 - (i * 17);
+        leds[(p - i + NUM_LEDS) % NUM_LEDS] = CRGB::Cyan;
+        leds[(p - i + NUM_LEDS) % NUM_LEDS].nscale8(f);
       }
     }
-  } else if (activeState.mode == MODE_ZONE_TWINKLE) {
+    break;
+
+  case MODE_WILD_SPARKLE:
+    for (int i = 0; i < NUM_LEDS; i++) {
+      if (random8() < 25)
+        leds[i] = CRGB::White;
+      else
+        leds[i].fadeToBlackBy(60);
+    }
+    break;
+
+  case MODE_YELLOW_DOUBLE_COMET:
+    FastLED.clear();
+    {
+      uint16_t p1 = (elapsed % 1000) * NUM_LEDS / 1000;
+      uint16_t p2 = (p1 + NUM_LEDS / 2) % NUM_LEDS;
+      for (int i = 0; i < 8; i++) {
+        uint8_t f = 255 - (i * 30);
+        leds[(p1 - i + NUM_LEDS) % NUM_LEDS] = CRGB::Yellow;
+        leds[(p1 - i + NUM_LEDS) % NUM_LEDS].nscale8(f);
+        leds[(p2 - i + NUM_LEDS) % NUM_LEDS] = CRGB::Yellow;
+        leds[(p2 - i + NUM_LEDS) % NUM_LEDS].nscale8(f);
+      }
+    }
+    break;
+
+  case MODE_FLASH_CHOOSE:
+  case MODE_ZONE_TWINKLE:
     FastLED.clear();
     for (int s = 0; s < 5; s++) {
       if (!activeState.zoneFlashing[s]) {
-        bool forceTrigger = (elapsed - activeState.zoneTimers[s] > 2000);
-        if (forceTrigger || random8() < 20) {
+        if (random8() < (activeState.mode == MODE_ZONE_TWINKLE ? 2 : 32)) {
           activeState.zoneFlashing[s] = true;
           activeState.zoneTimers[s] = elapsed;
         }
       } else {
-        uint32_t fElap = elapsed - activeState.zoneTimers[s];
-        uint32_t twinkleDur = 1500;
-        if (fElap > twinkleDur) {
+        uint32_t f = elapsed - activeState.zoneTimers[s];
+        uint32_t d = (activeState.mode == MODE_ZONE_TWINKLE ? 1500 : 400);
+        if (f > d)
           activeState.zoneFlashing[s] = false;
-          activeState.zoneTimers[s] = elapsed;
-        } else {
+        else {
           CRGB c = activeState.colors[s];
-          uint8_t ratio = map(fElap, 0, twinkleDur, 255, 0);
-          c.nscale8(ratio);
+          c.nscale8(map(f, 0, d, 255, 0));
           for (int i = 0; i < NUM_LEDS; i++)
             if (zoneMap[i] == s)
               leds[i] = c;
         }
       }
     }
+    break;
+
+  default:
+    FastLED.clear();
+    break;
   }
   FastLED.show();
 }
 
+// --- SETUP & LOOP ---
 void setup() {
-  // Default fallback: split into 5 equal contiguous sections
-  int ledsPerSection = NUM_LEDS / 5;
-  for (int i = 0; i < 5; i++) {
-    setZoneRange(i, i * ledsPerSection,
-                 (i == 4) ? (NUM_LEDS - 1) : ((i + 1) * ledsPerSection - 1));
-  }
-
-  // User's specific Zone Mapping (translating 1-indexed to 0-indexed)
-  // Zone 1: 1~5, 26~30
-  setZoneRange(0, 0, 4);
-  setZoneRange(0, 25, 29);
-  // Zone 2: 6~10, 31~35
-  setZoneRange(1, 5, 9);
-  setZoneRange(1, 30, 34);
-  // Zone 3: 21~25, 46~50 (Aligned to user's "back of band" logic)
-  setZoneRange(2, 20, 24);
-  setZoneRange(2, 45, 49);
-  // Zone 4: 11~15, 36~40
-  setZoneRange(3, 10, 14);
-  setZoneRange(3, 35, 39);
-  // Zone 5: 16~20, 41~45
-  setZoneRange(4, 15, 19);
-  setZoneRange(4, 40, 44);
-
-  // Reduce heat by underclocking CPU to 80MHz (plenty for BLE and LED)
-  setCpuFrequencyMhz(80);
-
   Serial.begin(115200);
-  delay(1000);
-
-  Serial.println("MagicBand+ Listener Starting...");
-
-  if (!LittleFS.begin(true)) {
-    Serial.println("LittleFS Mount Failed");
-  } else {
-    loadLogs();
-  }
+  pinMode(ONBOARD_LED_PIN, OUTPUT);
+  pinMode(MOSFET_PIN, OUTPUT);
+  digitalWrite(MOSFET_PIN, HIGH);
 
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS)
       .setCorrection(TypicalLEDStrip);
   FastLED.setBrightness(BRIGHTNESS);
-  FastLED.clear(true);
+  FastLED.clear();
+  FastLED.show();
 
-  pinMode(ONBOARD_LED_PIN, OUTPUT);
-  digitalWrite(ONBOARD_LED_PIN, !LED_ACTIVE_STATE); // Ensure off initially
+  if (!LittleFS.begin(true))
+    Serial.println("[FS] Error");
+  loadLogs();
 
-  pinMode(MOSFET_PIN, OUTPUT);
-  digitalWrite(MOSFET_PIN, LOW); // LED power off by default
+  // Initialize all LEDs to Zone 1 by default
+  for (int i = 0; i < NUM_LEDS; i++) zoneMap[i] = 0;
 
-  NimBLEDevice::setScanDuplicateCacheSize(0);
-  NimBLEDevice::init("MB_Scanner_Desk");
+  // --- MANUAL ZONE MAPPING (1-5) ---
+  setZoneRange(1, 0, 4);
+  setZoneRange(1, 20, 24);
+  setZoneRange(2, 5, 9);
+  setZoneRange(2, 25, 29);
+  setZoneRange(3, 40, 49);
+  setZoneRange(4, 10, 14);
+  setZoneRange(4, 30, 34);
+  setZoneRange(5, 15, 19);
+  setZoneRange(5, 35, 39);
+
+  // Map the rest of the 148-LED strand to zones
+  setZoneRange(1, 50, 69);
+  setZoneRange(2, 70, 89);
+  setZoneRange(3, 90, 109);
+  setZoneRange(4, 110, 129);
+  setZoneRange(5, 130, 147);
+
+  NimBLEDevice::init("MB-Listener");
   NimBLEScan *pScan = NimBLEDevice::getScan();
   pScan->setAdvertisedDeviceCallbacks(new MyDescriptiveCallbacks(), false);
   pScan->setActiveScan(true);
-  pScan->setDuplicateFilter(false);
-  pScan->setInterval(200); // Check every 200ms
-  pScan->setWindow(50);   // Listen for 50ms (25% duty cycle)
+  pScan->setInterval(200);
+  pScan->setWindow(100);
   pScan->start(0, nullptr, false);
-  Serial.println("\r\n--- MagicBand+ Descriptive Decoder Ready ---");
 }
 
 void loop() {
   handleSerialCommands();
   updateAnimations();
-
-  if (indicatorActive && (millis() - indicatorTimer > 100)) {
-    digitalWrite(ONBOARD_LED_PIN, !LED_ACTIVE_STATE);
+  if (indicatorActive && (millis() - indicatorTimer > 200)) {
     indicatorActive = false;
+    digitalWrite(ONBOARD_LED_PIN, !LED_ACTIVE_STATE);
   }
-
-  // Throttle frame rate down from 100fps to ~30fps
-  // This stops FastLED from aggressively blocking CPU interrupts continuously,
-  // dropping heat massively
-  delay(30);
-
-  // MOSFET Power Toggle with stabilization delay
-  static bool lastPowerState = false;
-  bool currentPowerState = activeState.active;
-  if (currentPowerState != lastPowerState) {
-    digitalWrite(MOSFET_PIN, currentPowerState ? HIGH : LOW);
-    if (currentPowerState) {
-        delay(5); // Wait for LED strip capacitors to stabilize
-    }
-    lastPowerState = currentPowerState;
-  }
+  delay(1);
 }
