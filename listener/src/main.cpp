@@ -7,7 +7,6 @@
 #include <WiFi.h>
 #include <set>
 
-
 // --- LOGGING ---
 #define LOG_FILE "/unknown.txt"
 std::set<String> loggedPackets;
@@ -28,7 +27,7 @@ bool webServerStarted = false;
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];
-#define BRIGHTNESS 128
+#define BRIGHTNESS 64
 
 // Indicator Config
 #if defined(CONFIG_IDF_TARGET_ESP32C3)
