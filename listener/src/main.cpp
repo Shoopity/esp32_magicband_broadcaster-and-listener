@@ -23,7 +23,7 @@ bool webServerStarted = false;
 #ifndef NUM_LEDS
 #define NUM_LEDS 148
 #endif
-#define MOSFET_PIN 12 // Pin to toggle LED strip power via MOSFET
+#define MOSFET_PIN 4 // Pin to toggle LED strip power via MOSFET
 #define LED_TYPE WS2812B
 #define COLOR_ORDER GRB
 CRGB leds[NUM_LEDS];

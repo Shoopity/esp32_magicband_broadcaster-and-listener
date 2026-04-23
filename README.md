@@ -7,7 +7,7 @@ Protocol research and decoding guidance provided by the excellent [EMCOT MagicBa
 ## 🌟 Features
 
 *  Changes from xxfunprojectsxx broadcaster/web page:
-    *   Added three fields at the bottom to let you put put in your own Hex code (copy/paste from the EMCOT site), your own binary, or a "Laboratory" area.
+    *   Added three fields at the bottom to let you put in your own Hex code (copy/paste from the EMCOT site), your own binary, or a "Laboratory" area.
     *   These fields "interact" with each other, meaning whatever hex you type in automatically translates to binary, and whatever binary you enter automatically adjusts the Hex.
     *   The "Laboratory" section isn't 100% perfect, but it can be used when trying to generate your own broadcasts.
     *   **Web Interpreter UI**: The Broadcaster features a live, responsive web interface that decodes raw hexadecimal payloads into human-readable labels (Vibration, Color, Zone Masking, and Animation Mode).
@@ -20,8 +20,10 @@ Protocol research and decoding guidance provided by the excellent [EMCOT MagicBa
     *   **32-Color Custom Palette**: Maps Disney's raw 5-bit color indices to calibrated, human-readable RGB values for "better" color accuracy on WS2812B strips.
     *   Stores every broadcast it comes across once for later testing.
         *   Connect a Serial Monitor and type in "startweb" then press enter.
-        *   This will start an AP like the broadcaster called "MB-Scanner-Logs"; same password and IP of the broadcaster.
-        *   From here, you can download what's been seen and clear the log.
+        *   This will start an AP like the broadcaster called "MB-Scanner-Logs" (Password: magicband123).
+        *   From here, you can download what's been seen at http://192.168.4.1 and clear the log.
+        *   Or, you can type in "printlogs" in the serial monitor and copy the data from there.
+        *   You can stop the web server by typing "stopweb" in the serial monitor.
 
 ## 🗂️ Repository Structure
 
