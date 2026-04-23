@@ -816,8 +816,8 @@ void setup() {
   pScan->setAdvertisedDeviceCallbacks(new MyDescriptiveCallbacks(), false);
   pScan->setActiveScan(true);
   pScan->setDuplicateFilter(false);
-  pScan->setInterval(100);
-  pScan->setWindow(75); // Sleep the radio 25% of the time to cool down
+  pScan->setInterval(200); // Check every 200ms
+  pScan->setWindow(50);   // Listen for 50ms (25% duty cycle)
   pScan->start(0, nullptr, false);
   Serial.println("\r\n--- MagicBand+ Descriptive Decoder Ready ---");
 }
@@ -836,6 +836,14 @@ void loop() {
   // dropping heat massively
   delay(30);
 
-  // MOSFET Power Toggle
-  digitalWrite(MOSFET_PIN, activeState.active ? HIGH : LOW);
+  // MOSFET Power Toggle with stabilization delay
+  static bool lastPowerState = false;
+  bool currentPowerState = activeState.active;
+  if (currentPowerState != lastPowerState) {
+    digitalWrite(MOSFET_PIN, currentPowerState ? HIGH : LOW);
+    if (currentPowerState) {
+        delay(5); // Wait for LED strip capacitors to stabilize
+    }
+    lastPowerState = currentPowerState;
+  }
 }
