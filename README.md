@@ -24,6 +24,7 @@ Protocol research and decoding guidance provided by the excellent [EMCOT MagicBa
         *   From here, you can download what's been seen at http://192.168.4.1 and clear the log.
         *   Or, you can type in "printlogs" in the serial monitor and copy the data from there.
         *   You can stop the web server by typing "stopweb" in the serial monitor.
+*   Added a simple Python script you can run to use your computer's Bluetooth (dongle or otherwise?) to send MB packets.
 
 ## 🗂️ Repository Structure
 
