@@ -48,6 +48,7 @@ uint8_t
     cometMap[NUM_LEDS]; // Explicit virtual path for the Cyan Comet (19 -> 0)
 uint8_t currentZoneIntensity[5] = {0, 0, 0, 0,
                                    0}; // Persistent for decay animations
+uint32_t sparkleUntil = 0; // Sparkle overlay timer for recognized packets
 
 void setZoneRange(uint8_t zone, int start, int end) {
   if (zone < 1 || zone > 5)
@@ -428,20 +429,37 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       triggered = true;
     }
 
-    if (triggered) {
+    // Log every unique packet once
+    bool isNewPacket = logUnknown(mfgData);
+
+    if (isNewPacket && triggered) {
+      // New + recognized: sparkle 1s then animate
+      sparkleUntil = millis() + 1000;
+      nextState.active = true;
+      newCommandReceived = true;
+      indicatorActive = true;
+      indicatorTimer = millis();
+      digitalWrite(ONBOARD_LED_PIN, LED_ACTIVE_STATE);
+    } else if (isNewPacket && !triggered) {
+      // New + unrecognized: sparkle 15s
+      nextState.mode = MODE_WILD_SPARKLE;
+      nextState.durationMs = 15000;
+      nextState.active = true;
+      newCommandReceived = true;
+      indicatorActive = true;
+      indicatorTimer = millis();
+      digitalWrite(ONBOARD_LED_PIN, LED_ACTIVE_STATE);
+    } else if (triggered) {
+      // Seen before + recognized: just animate, no sparkle
       nextState.active = true;
       newCommandReceived = true;
       indicatorActive = true;
       indicatorTimer = millis();
       digitalWrite(ONBOARD_LED_PIN, LED_ACTIVE_STATE);
     } else {
-      if (logUnknown(mfgData)) {
-        nextState.mode = MODE_WILD_SPARKLE;
-        nextState.durationMs = 20000;
-      } else {
-        nextState.mode = MODE_YELLOW_DOUBLE_COMET;
-        nextState.durationMs = 5000;
-      }
+      // Seen before + unrecognized: yellow comet
+      nextState.mode = MODE_YELLOW_DOUBLE_COMET;
+      nextState.durationMs = 5000;
       nextState.active = true;
       newCommandReceived = true;
     }
@@ -494,6 +512,20 @@ void updateAnimations() {
   }
   if (!activeState.active) {
     FastLED.clear();
+    FastLED.show();
+    return;
+  }
+
+  // Sparkle overlay for recognized packets (1s flash before real animation)
+  if (millis() < sparkleUntil) {
+    for (int i = 0; i < NUM_LEDS; i++) {
+      if (zoneMap[i] < 5) {
+        if (random8() < 25) leds[i] = CRGB::White;
+        else leds[i].fadeToBlackBy(60);
+      } else {
+        leds[i] = CRGB::Black;
+      }
+    }
     FastLED.show();
     return;
   }
