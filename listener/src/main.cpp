@@ -246,8 +246,7 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
     if (mfgId != 0x0183)
       return;
     std::string addr = advertisedDevice->getAddress().toString();
-    if (mfgData == lastSeen.data && addr == lastSeen.addr &&
-        (millis() - lastSeen.timestamp < 3000))
+    if (mfgData == lastSeen.data && (millis() - lastSeen.timestamp < 3000))
       return;
     lastSeen.data = mfgData;
     lastSeen.addr = addr;
@@ -509,10 +508,17 @@ void updateAnimations() {
     newCommandReceived = false;
     for (int s = 0; s < 5; s++)
       currentZoneIntensity[s] = 0;
+      
+    // Wake up the LEDs if an animation is starting
+    if (activeState.active) {
+      digitalWrite(MOSFET_PIN, HIGH);
+      delay(2); // Brief pause to let WS2812B chips power up
+    }
   }
   if (!activeState.active) {
     FastLED.clear();
     FastLED.show();
+    digitalWrite(MOSFET_PIN, LOW); // Kill power to the strip when idle
     return;
   }
 
@@ -520,8 +526,10 @@ void updateAnimations() {
   if (millis() < sparkleUntil) {
     for (int i = 0; i < NUM_LEDS; i++) {
       if (zoneMap[i] < 5) {
-        if (random8() < 25) leds[i] = CRGB::White;
-        else leds[i].fadeToBlackBy(60);
+        if (random8() < 25)
+          leds[i] = CRGB::White;
+        else
+          leds[i].fadeToBlackBy(60);
       } else {
         leds[i] = CRGB::Black;
       }
@@ -703,8 +711,7 @@ void updateAnimations() {
       CRGB c2 = activeState.colors[1];
       targetColor =
           (z == 2) ? blend(c1, c2, 255 - ratio) : blend(c1, c2, ratio);
-    }
-    else if (activeState.mode == MODE_PULSE_BURST) {
+    } else if (activeState.mode == MODE_PULSE_BURST) {
       // 2 pulses over 1s, then 0.5s off = 1.5s cycle
       uint32_t pos = elapsed % 1500;
       if (pos < 1000) {
@@ -733,8 +740,7 @@ void updateAnimations() {
       }
       uint8_t phase = beatsin8(60, 0, 255, activeState.triggerTime);
       targetColor = (phase < 128) ? colorA : colorB;
-    }
-    else if (activeState.mode == MODE_ZONE_ALTERNATE) {
+    } else if (activeState.mode == MODE_ZONE_ALTERNATE) {
       // 1s cycle: 500ms Group A (Z1,Z4), 500ms Group B (Z2,Z5)
       bool groupAOn = (elapsed % 1000) < 500;
       if (z == 0 || z == 3)
@@ -869,9 +875,9 @@ void setup() {
   NimBLEDevice::init("MB-Scanner-Listener");
   NimBLEScan *pScan = NimBLEDevice::getScan();
   pScan->setAdvertisedDeviceCallbacks(new MyDescriptiveCallbacks(), false);
-  pScan->setActiveScan(true);
-  pScan->setInterval(200);
-  pScan->setWindow(100);
+  pScan->setActiveScan(false); // was true
+  pScan->setInterval(200);     // scan for a BT packet every 200 ms
+  pScan->setWindow(100);       // Each time you scan, scan for 100 ms
   pScan->start(0, nullptr, false);
 }
 

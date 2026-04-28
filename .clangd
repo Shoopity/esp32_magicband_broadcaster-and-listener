@@ -1,6 +1,5 @@
 Diagnostics:
-  Suppress: [member_redeclared]
+  Suppress: [member_redeclared, redefinition]
 
 CompileFlags:
-  CompilationDatabase: .pio/build/listener_c3
   Remove: [-fstrict-volatile-bitfields, -fno-tree-switch-conversion, -mshort-calls]
