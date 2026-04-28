@@ -13,11 +13,7 @@ AsyncWebServer server(80);
 bool webServerStarted = false;
 
 #ifndef LED_PIN
-#if defined(CONFIG_IDF_TARGET_ESP32C3)
-#define LED_PIN 8
-#else
-#define LED_PIN 15
-#endif
+#define LED_PIN 5
 #endif
 
 #ifndef NUM_LEDS
@@ -839,6 +835,7 @@ void updateAnimations() {
 void setup() {
   Serial.begin(115200);
   pinMode(ONBOARD_LED_PIN, OUTPUT);
+  digitalWrite(ONBOARD_LED_PIN, !LED_ACTIVE_STATE); // Explicitly turn off
   pinMode(MOSFET_PIN, OUTPUT);
   digitalWrite(MOSFET_PIN, HIGH);
   FastLED.addLeds<LED_TYPE, LED_PIN, COLOR_ORDER>(leds, NUM_LEDS)
