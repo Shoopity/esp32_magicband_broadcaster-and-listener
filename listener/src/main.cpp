@@ -508,6 +508,7 @@ void updateAnimations() {
     // Wake up the LEDs if an animation is starting
     if (activeState.active) {
       digitalWrite(MOSFET_PIN, HIGH);
+      pinMode(LED_PIN, OUTPUT); // Restore data pin
       delay(2); // Brief pause to let WS2812B chips power up
     }
   }
@@ -515,6 +516,7 @@ void updateAnimations() {
     FastLED.clear();
     FastLED.show();
     digitalWrite(MOSFET_PIN, LOW); // Kill power to the strip when idle
+    pinMode(LED_PIN, INPUT); // Prevent parasitic powering
     return;
   }
 
