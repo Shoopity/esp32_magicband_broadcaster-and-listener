@@ -83,38 +83,36 @@ fun BroadcasterScreen(manager: BleAdvertiserManager) {
     var isBroadcasting by remember { mutableStateOf(false) }
 
     val quickActions = listOf(
-        "Green Bootup" to "e90b0b0f0f5c5d48a5d1453205",
-        "Slow Blink" to "8301e100e90c000f0f5d465bf00532374895",
-        "Orange Blink" to "8301e100e90c00ef0f4f4f5bf0fb14374895",
-        "5 Color Cycle" to "8301e100e90c000f0fb1b9b5b1a2307b7db0",
-        "Taste the Rainbow" to "8301e100e90c000f0f5d465bf005323748b0",
-        "Slow Lightning" to "e100e90e00010fbda0a0bda059070048aeb5",
-        "Fast Lightning" to "e100e90e00020fbca0bca0bc5917fb48aebb",
-        "Green/Purple Lightning" to "e100e90e00110fbca7b9a7b959190248aeb0",
-        "Intense Lightning" to "e100e90e00150fbbbbbbbbbb59190248aeb0",
-        "Zone Color Fade" to "e100e90e00830fb5b9b2adb659190b48aeb0",
-        "Blue/Orange Flicker" to "e100e90f00110f4f425807488dd2462a0717b8",
-        "Pink Center Pulse" to "e100e90f002a0f46435812488dd246021200b0",
-        "Blood Orange Pulse" to "e100e910000f0f545d58f44882d146090ad065282102",
-        "Cyan Pulse Comet" to "e100e91000134897d00ea0d146060f30d04e07b0",
-        "Green/Cyan Fade" to "e100e911006f0f565258f44882d1460208d06500b0",
-        "Red/Yellow Fade" to "e200e911004f0f444f58f44882d1460607d06543b0",
-        "Blue/Teal Fade" to "e100e911000f0f485958f44882d146020dd06505b0",
-        "Indigo/Violet Fade" to "e200e911004f0f4f5558f44882d146022ad06501b0",
-        "Green/Yellow Fade" to "e100e91100010f5a475bf03134374894d13d0507b0",
-        "Aqua/Green Fade" to "e100e91100070f555d58f44882d1460508d06500b0",
-        "Blue/Navy Fade" to "e100e91100440f514258f44882d146050fd06500b0",
-        "Blue/Yellow Blink" to "e100e91200012904020211114896d00effd1460707b0",
-        "Zone Sequential Cycle" to "e200e91200030fa2a2a4a4a230d037f4d2460064fcb0",
-        "Mystery Pulse 1" to "e100e91200010fbcbdbdbdbd30d037f4d2460000fcbb",
-        "Mystery Pulse 2" to "e100e91300b60f404458f44882d06519d146060a307bff",
-        "Mystery Pulse 3" to "e100e9130002d037f0d23d0505000efa8983510ee7a0b0",
-        "Mystery Pulse 4" to "e200e91300650fbdb5bcb5bc7aec5c0a2915291548abb0",
-        "Mystery Pulse 5" to "e100e914000cd037f0d23d050c0c0eec8983510eee0c3db0",
-        "Mystery Pulse 6" to "e200e914002cd037f0d23d0212000eea8983510ee30c1eb0",
-        "Mystery Pulse 7" to "e200e91400420f555b58f44882d0651bd1462a02307b5db0",
-        "Red Flash" to "031b012102ff000000000000000000000000000000000000",
-        "Blue Steady" to "031b0121020000ff00000000000000000000000000000000"
+        "Green Spin"                to "e100e90b0b0f0f5c5d48a5d1453205",
+        "Slow Blink"                to "e100e90c000f0f5d465bf00532374895",
+        "Orange Blink"              to "e100e90c00ef0f4f4f5bf0fb14374895",
+        "5 Color Cycle-V"           to "e100e90c000f0fb1b9b5b1a2307b7db5",
+        "Taste the Rainbow"         to "e100e90c000f0f5d465bf005323748b0",
+        "Slow Lightning-V"          to "e100e90e00010fbda0a0bda059070048aeb5",
+        "Fast Lightning-V"          to "e100e90e00020fbca0bca0bc5917fb48aeb5",
+        "Intense Lightning-V"       to "e100e90e00150fbbbbbbbbbb59190248aeb5",
+        "Green/Purple Lightning-V"  to "e100e90e00110fbca7b9a7b959190248aeb5",
+        "Zone Color Fade-V"         to "e100e90e00830fb5b9b2adb659190b48aeb5",
+        "Blue/Orange Flicker-V"     to "e100e90f00110f4f425807488dd2462a0717b8",
+        "Pink Center Pulse-V"       to "e100e90f002a0f46435812488dd246021200b5",
+        "Blood Orange Pulse"        to "e100e910000f0f545d58f44882d146090ad065282102",
+        "Cyan Pulse Comet-V"        to "e100e91000134897d00ea0d146060f30d04e07b5",
+        "Green/Cyan Swap-V"         to "e100e911006f0f565258f44882d1460208d06500b5",
+        "Blue/Tan Corner Swap-V"    to "e200e911004f0f444f58f44882d1460607d06543b5",
+        "Green/Purple Swap-V"       to "e100e911000f0f485958f44882d146020dd06505b5",
+        "Red/Yellow Swap-V"         to "e200e911004f0f4f5558f44882d146022ad06501b5",
+        "Green/Purple Pulse-V"      to "e100e91100010f5a475bf03134374894d13d0507b5",
+        "Red/Black Swap-V"          to "e100e91100070f555d58f44882d1460508d06500b5",
+        "Blue/Yellow Fade-V"        to "e100e91100440f514258f44882d146050fd06500b5",
+        "Blue/Yellow Blink-V"       to "e100e91200012904020211114896d00effd1460707b5",
+        "Zone Sequential Cycle-V"   to "e200e91200030fa2a2a4a4a230d037f4d2460064fcb5",
+        "Mystery Pulse 1-V"         to "e100e91200010fbcbdbdbdbd30d037f4d2460000fcbb",
+        "Mystery Pulse 2"           to "e100e91300b60f404458f44882d06519d146060a307bf5",
+        "Mystery Pulse 3-V"         to "e100e9130002d037f0d23d0505000efa8983510ee7a0b5",
+        "Mystery Pulse 4-V"         to "e200e91300650fbdb5bcb5bc7aec5c0a2915291548abb5",
+        "Mystery Pulse 5-V"         to "e100e914000cd037f0d23d050c0c0eec8983510eee0c3db5",
+        "Mystery Pulse 6-V"         to "e200e914002cd037f0d23d0212000eea8983510ee30c1eb5",
+        "Mystery Pulse 7-V"         to "e200e91400420f555b58f44882d0651bd1462a02307b5db5"
     )
 
     LazyVerticalGrid(
@@ -187,6 +185,7 @@ fun BroadcasterScreen(manager: BleAdvertiserManager) {
         }
 
         items(quickActions) { (name, hex) ->
+            val isVariant = name.endsWith("-V")
             ElevatedButton(
                 onClick = {
                     isBroadcasting = true
@@ -201,7 +200,7 @@ fun BroadcasterScreen(manager: BleAdvertiserManager) {
                 enabled = !isBroadcasting,
                 modifier = Modifier.height(60.dp),
                 colors = ButtonDefaults.elevatedButtonColors(
-                    containerColor = Color(0xFF333333),
+                    containerColor = if (isVariant) Color(0xFF4A148C) else Color(0xFF333333),
                     contentColor = Color.White
                 )
             ) {
