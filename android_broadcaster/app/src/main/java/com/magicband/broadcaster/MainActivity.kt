@@ -14,6 +14,7 @@ import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.blur
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -115,96 +116,128 @@ fun BroadcasterScreen(manager: BleAdvertiserManager) {
         "Mystery Pulse 7-V"         to "e200e91400420f555b58f44882d0651bd1462a02307b5db5"
     )
 
-    LazyVerticalGrid(
-        columns = GridCells.Fixed(2),
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(24.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        item(span = { GridItemSpan(2) }) {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                Text(
-                    "MagicBand+ Broadcaster",
-                    fontSize = 28.sp,
-                    fontWeight = FontWeight.Bold,
-                    color = Color.White
-                )
-
-                Spacer(modifier = Modifier.height(32.dp))
-
-                OutlinedTextField(
-                    value = hexInput,
-                    onValueChange = { hexInput = it.replace(" ", "") },
-                    label = { Text("Enter Hex Code", color = Color.Gray) },
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = OutlinedTextFieldDefaults.colors(
-                        focusedTextColor = Color.White,
-                        unfocusedTextColor = Color.White,
-                        focusedBorderColor = Color.Magenta,
-                        unfocusedBorderColor = Color.Gray
+    Box(modifier = Modifier.fillMaxSize()) {
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            modifier = Modifier
+                .fillMaxSize()
+                .padding(24.dp)
+                .blur(if (isBroadcasting) 10.dp else 0.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            item(span = { GridItemSpan(2) }) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Text(
+                        "MagicBand+ Broadcaster",
+                        fontSize = 28.sp,
+                        fontWeight = FontWeight.Bold,
+                        color = Color.White
                     )
-                )
 
-                Spacer(modifier = Modifier.height(16.dp))
+                    Spacer(modifier = Modifier.height(32.dp))
 
-                Button(
-                    onClick = {
-                        if (hexInput.isNotEmpty()) {
-                            isBroadcasting = true
-                            statusText = "Broadcasting..."
-                            manager.startAdvertising("cc03000000") {
-                                manager.startAdvertising(hexInput) {
-                                    isBroadcasting = false
-                                    statusText = "Done"
+                    OutlinedTextField(
+                        value = hexInput,
+                        onValueChange = { hexInput = it.replace(" ", "") },
+                        label = { Text("Enter Hex Code", color = Color.Gray) },
+                        modifier = Modifier.fillMaxWidth(),
+                        enabled = !isBroadcasting,
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedTextColor = Color.White,
+                            unfocusedTextColor = Color.White,
+                            focusedBorderColor = Color.Magenta,
+                            unfocusedBorderColor = Color.Gray,
+                            disabledTextColor = Color.Gray,
+                            disabledBorderColor = Color.DarkGray
+                        )
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    Button(
+                        onClick = {
+                            if (hexInput.isNotEmpty()) {
+                                isBroadcasting = true
+                                statusText = "Broadcasting..."
+                                manager.startAdvertising("cc03000000") {
+                                    manager.startAdvertising(hexInput) {
+                                        isBroadcasting = false
+                                        statusText = "Done"
+                                    }
                                 }
+                            }
+                        },
+                        enabled = !isBroadcasting && hexInput.length % 2 == 0,
+                        modifier = Modifier.fillMaxWidth(),
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Magenta)
+                    ) {
+                        Text("Broadcast Custom Code", color = Color.White)
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(statusText, color = if (isBroadcasting) Color.Cyan else Color.Green)
+
+                    Spacer(modifier = Modifier.height(48.dp))
+
+                    Text(
+                        "Quick Actions",
+                        color = Color.White,
+                        fontSize = 18.sp,
+                        fontWeight = FontWeight.Medium
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+                }
+            }
+
+            items(quickActions) { (name, hex) ->
+                val isVariant = name.endsWith("-V")
+                ElevatedButton(
+                    onClick = {
+                        isBroadcasting = true
+                        hexInput = hex
+                        statusText = "Broadcasting $name..."
+                        manager.startAdvertising("cc03000000") {
+                            manager.startAdvertising(hex) {
+                                isBroadcasting = false
+                                statusText = "Done"
                             }
                         }
                     },
-                    enabled = !isBroadcasting && hexInput.length % 2 == 0,
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = ButtonDefaults.buttonColors(containerColor = Color.Magenta)
+                    enabled = !isBroadcasting,
+                    modifier = Modifier.height(60.dp),
+                    colors = ButtonDefaults.elevatedButtonColors(
+                        containerColor = if (isVariant) Color(0xFF4A148C) else Color(0xFF333333),
+                        contentColor = Color.White,
+                        disabledContainerColor = if (isVariant) Color(0xFF2E0D57) else Color(0xFF1A1A1A),
+                        disabledContentColor = Color.Gray
+                    )
                 ) {
-                    Text("Broadcast Custom Code", color = Color.White)
+                    Text(name, style = LocalTextStyle.current.copy(fontSize = 12.sp))
                 }
-
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(statusText, color = if (isBroadcasting) Color.Cyan else Color.Green)
-
-                Spacer(modifier = Modifier.height(48.dp))
-
-                Text(
-                    "Quick Actions",
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Medium
-                )
-                Spacer(modifier = Modifier.height(16.dp))
             }
         }
 
-        items(quickActions) { (name, hex) ->
-            val isVariant = name.endsWith("-V")
-            ElevatedButton(
-                onClick = {
-                    isBroadcasting = true
-                    statusText = "Broadcasting $name..."
-                    manager.startAdvertising("cc03000000") {
-                        manager.startAdvertising(hex) {
-                            isBroadcasting = false
-                            statusText = "Done"
+        if (isBroadcasting) {
+            Surface(
+                modifier = Modifier.fillMaxSize(),
+                color = Color.Black.copy(alpha = 0.4f)
+            ) {
+                Box(contentAlignment = Alignment.Center) {
+                    Card(
+                        colors = CardDefaults.cardColors(containerColor = Color(0xFF333333)),
+                        elevation = CardDefaults.cardElevation(defaultElevation = 8.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.padding(24.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally
+                        ) {
+                            CircularProgressIndicator(color = Color.Magenta)
+                            Spacer(modifier = Modifier.height(16.dp))
+                            Text(statusText, color = Color.White, fontWeight = FontWeight.Bold)
                         }
                     }
-                },
-                enabled = !isBroadcasting,
-                modifier = Modifier.height(60.dp),
-                colors = ButtonDefaults.elevatedButtonColors(
-                    containerColor = if (isVariant) Color(0xFF4A148C) else Color(0xFF333333),
-                    contentColor = Color.White
-                )
-            ) {
-                Text(name, style = LocalTextStyle.current.copy(fontSize = 12.sp))
+                }
             }
         }
     }

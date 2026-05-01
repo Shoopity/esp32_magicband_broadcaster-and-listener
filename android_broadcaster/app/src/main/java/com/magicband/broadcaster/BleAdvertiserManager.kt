@@ -1,5 +1,6 @@
 package com.magicband.broadcaster
 
+import android.annotation.SuppressLint
 import android.bluetooth.BluetoothAdapter
 import android.bluetooth.BluetoothManager
 import android.bluetooth.le.AdvertiseCallback
@@ -15,8 +16,7 @@ class BleAdvertiserManager(context: Context) {
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
     private val advertiser: BluetoothLeAdvertiser? = bluetoothAdapter?.bluetoothLeAdvertiser
 
-    private var isAdvertising = false
-
+    @SuppressLint("MissingPermission")
     fun startAdvertising(hexPayload: String, onComplete: () -> Unit) {
         if (advertiser == null) {
             Log.e("BleAdvertiser", "Bluetooth LE Advertising not supported on this device")
@@ -26,9 +26,9 @@ class BleAdvertiserManager(context: Context) {
         val payloadBytes = hexStringToByteArray(hexPayload)
         
         val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY) // 100ms interval (High activity)
             .setConnectable(false)
-            .setTimeout(2000) // 2 seconds, similar to the Python script duration
+            .setTimeout(2000) // 2 seconds
             .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
             .build()
 
@@ -36,26 +36,26 @@ class BleAdvertiserManager(context: Context) {
             .addManufacturerData(0x0183, payloadBytes)
             .build()
 
+        // We use a new callback for each start to avoid "callback already registered" errors
         val callback = object : AdvertiseCallback() {
             override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
                 super.onStartSuccess(settingsInEffect)
-                isAdvertising = true
-                Log.d("BleAdvertiser", "Advertising started successfully")
+                Log.d("BleAdvertiser", "Broadcasting: $hexPayload")
             }
 
             override fun onStartFailure(errorCode: Int) {
                 super.onStartFailure(errorCode)
-                isAdvertising = false
-                Log.e("BleAdvertiser", "Advertising failed with error code: $errorCode")
+                Log.e("BleAdvertiser", "Start failed: $errorCode")
             }
         }
 
         advertiser.startAdvertising(settings, data, callback)
         
-        // Android's setTimeout handles the stop, but we can notify completion
+        // Wait the full 2 seconds plus a tiny breather before moving to next step
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
+            advertiser.stopAdvertising(callback)
             onComplete()
-        }, 2000)
+        }, 2050)
     }
 
     private fun hexStringToByteArray(s: String): ByteArray {
