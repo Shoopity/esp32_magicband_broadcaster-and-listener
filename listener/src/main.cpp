@@ -81,7 +81,8 @@ enum AnimationMode {
   MODE_TWO_COLOR_TOGGLE,
   MODE_COLOR_ROTATE,
   MODE_PULSE_BURST,
-  MODE_ZONE_ALTERNATE
+  MODE_ZONE_ALTERNATE,
+  MODE_REPEAT_FADE
 };
 
 struct AnimationState {
@@ -165,7 +166,7 @@ CRGB getDisneyColor(uint8_t rawByte) {
   case 17:
     return CRGB::Yellow;
   case 18:
-    return CRGB::Lime;
+    return 0x800080; // Official Purple
   case 19:
     return CRGB::Orange;
   case 20:
@@ -411,17 +412,21 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       }
       triggered = true;
     } else if (subAction == 0x13) {
-      nextState.mode = MODE_ZONE_ALTERNATE;
-      // byte0 = Z3 center; byte1,3 = Group B; byte2,4 = Group A
-      CRGB center = getDisneyColor((uint8_t)mfgData[actionIdx + 5]);
-      CRGB groupB = getDisneyColor((uint8_t)mfgData[actionIdx + 6]);
-      CRGB groupA = getDisneyColor((uint8_t)mfgData[actionIdx + 7]);
-      nextState.colors[0] = groupA; // Z1
-      nextState.colors[1] = groupB; // Z2
-      nextState.colors[2] = center; // Z3
-      nextState.colors[3] = groupA; // Z4
-      nextState.colors[4] = groupB; // Z5
+      // Logic for "All Purple" / Master Color at index 12
+      nextState.mode = MODE_SOLID;
+      CRGB color = getDisneyColor((uint8_t)mfgData[actionIdx + 12]);
+      for (int i = 0; i < 5; i++) nextState.colors[i] = color;
       triggered = true;
+    } else if (subAction == 0x14) {
+      // Repeat Fade Logic (Pink/Purple packets)
+      // We look for a specific signature to exclude the "Flicker" packet
+      uint8_t sig1 = (uint8_t)mfgData[actionIdx + 11];
+      if (sig1 == 0x05 || sig1 == 0x02) {
+        nextState.mode = MODE_REPEAT_FADE;
+        CRGB color = getDisneyColor((uint8_t)mfgData[actionIdx + 12]);
+        for (int i = 0; i < 5; i++) nextState.colors[i] = color;
+        triggered = true;
+      }
     }
 
     // Log every unique packet once
@@ -653,6 +658,7 @@ void updateAnimations() {
   case MODE_COLOR_ROTATE:
   case MODE_PULSE_BURST:
   case MODE_ZONE_ALTERNATE:
+  case MODE_REPEAT_FADE:
     for (int s = 0; s < 5; s++)
       zoneIntensity[s] = 255;
     break;
@@ -763,6 +769,15 @@ void updateAnimations() {
       uint8_t nxtZone = rotToZone[(pos + step + 1) % 5];
       targetColor =
           blend(activeState.colors[srcZone], activeState.colors[nxtZone], frac);
+    } else if (activeState.mode == MODE_REPEAT_FADE) {
+      // 1.25s cycle: 1s fade-on, 0.25s off
+      uint32_t cycleMs = 1250;
+      uint32_t pos = elapsed % cycleMs;
+      if (pos < 1000) {
+        targetColor = blend(CRGB::Black, activeState.colors[z], map(pos, 0, 1000, 0, 255));
+      } else {
+        targetColor = CRGB::Black;
+      }
     }
 
     leds[i] = targetColor;

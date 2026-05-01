@@ -15,6 +15,7 @@ class BleAdvertiserManager(context: Context) {
     private val bluetoothManager = context.getSystemService(Context.BLUETOOTH_SERVICE) as BluetoothManager
     private val bluetoothAdapter: BluetoothAdapter? = bluetoothManager.adapter
     private val advertiser: BluetoothLeAdvertiser? = bluetoothAdapter?.bluetoothLeAdvertiser
+    private val callbacks = mutableListOf<AdvertiseCallback>()
 
     @SuppressLint("MissingPermission")
     fun startAdvertising(hexPayload: String, onComplete: () -> Unit) {
@@ -23,39 +24,43 @@ class BleAdvertiserManager(context: Context) {
             return
         }
 
-        val payloadBytes = hexStringToByteArray(hexPayload)
-        
-        val settings = AdvertiseSettings.Builder()
-            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY) // 100ms interval (High activity)
-            .setConnectable(false)
-            .setTimeout(2000) // 2 seconds
-            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
-            .build()
+        // Stop all previous advertisers
+        stopAll()
 
+        val payloadBytes = hexStringToByteArray(hexPayload)
         val data = AdvertiseData.Builder()
             .addManufacturerData(0x0183, payloadBytes)
             .build()
 
-        // We use a new callback for each start to avoid "callback already registered" errors
-        val callback = object : AdvertiseCallback() {
-            override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
-                super.onStartSuccess(settingsInEffect)
-                Log.d("BleAdvertiser", "Broadcasting: $hexPayload")
-            }
+        val settings = AdvertiseSettings.Builder()
+            .setAdvertiseMode(AdvertiseSettings.ADVERTISE_MODE_LOW_LATENCY)
+            .setConnectable(false)
+            .setTxPowerLevel(AdvertiseSettings.ADVERTISE_TX_POWER_HIGH)
+            .build()
 
-            override fun onStartFailure(errorCode: Int) {
-                super.onStartFailure(errorCode)
-                Log.e("BleAdvertiser", "Start failed: $errorCode")
+        // Start 3 concurrent advertisers to triple the packet density (mimics PC speed)
+        repeat(3) { index ->
+            val callback = object : AdvertiseCallback() {
+                override fun onStartSuccess(settingsInEffect: AdvertiseSettings?) {
+                    super.onStartSuccess(settingsInEffect)
+                    Log.d("BleAdvertiser", "Slot $index started: $hexPayload")
+                }
             }
+            callbacks.add(callback)
+            advertiser.startAdvertising(settings, data, callback)
         }
-
-        advertiser.startAdvertising(settings, data, callback)
         
-        // Wait the full 2 seconds plus a tiny breather before moving to next step
+        // Duration: 2.2 seconds (extra 200ms to ensure 8+ packets are seen)
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            advertiser.stopAdvertising(callback)
+            stopAll()
             onComplete()
-        }, 2050)
+        }, 2200)
+    }
+
+    @SuppressLint("MissingPermission")
+    private fun stopAll() {
+        callbacks.forEach { advertiser?.stopAdvertising(it) }
+        callbacks.clear()
     }
 
     private fun hexStringToByteArray(s: String): ByteArray {
