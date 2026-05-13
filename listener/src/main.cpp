@@ -140,7 +140,7 @@ CRGB getDisneyColor(uint8_t rawByte) {
   case 4:
     return CRGB::MidnightBlue;
   case 5:
-    return 0xE6E6FA;
+    return 0x800080; // Official Purple
   case 6:
     return CRGB::White;
   case 7:
@@ -412,18 +412,30 @@ class MyDescriptiveCallbacks : public NimBLEAdvertisedDeviceCallbacks {
       }
       triggered = true;
     } else if (subAction == 0x13) {
-      // Logic for "All Purple" / Master Color at index 12
-      nextState.mode = MODE_SOLID;
-      CRGB color = getDisneyColor((uint8_t)mfgData[actionIdx + 12]);
-      for (int i = 0; i < 5; i++) nextState.colors[i] = color;
+      // Restore ZONE_ALTERNATE for the "Perfect" packets
+      nextState.mode = MODE_ZONE_ALTERNATE;
+      CRGB center = getDisneyColor((uint8_t)mfgData[actionIdx + 5]);
+      CRGB groupB = getDisneyColor((uint8_t)mfgData[actionIdx + 6]);
+      CRGB groupA = getDisneyColor((uint8_t)mfgData[actionIdx + 7]);
+      nextState.colors[0] = groupA; // Z1
+      nextState.colors[1] = groupB; // Z2
+      nextState.colors[2] = center; // Z3
+      nextState.colors[3] = groupA; // Z4
+      nextState.colors[4] = groupB; // Z5
       triggered = true;
+
+      // Special case for the "All Purple" repeater hiding in 0x13
+      if ((uint8_t)mfgData[actionIdx + 9] == 0x05) {
+          nextState.mode = MODE_REPEAT_FADE;
+          CRGB color = getDisneyColor((uint8_t)mfgData[actionIdx + 10]);
+          for (int i = 0; i < 5; i++) nextState.colors[i] = color;
+      }
     } else if (subAction == 0x14) {
-      // Repeat Fade Logic (Pink/Purple packets)
-      // We look for a specific signature to exclude the "Flicker" packet
-      uint8_t sig1 = (uint8_t)mfgData[actionIdx + 11];
+      // Corrected offsets for 0x14 Repeat Fade
+      uint8_t sig1 = (uint8_t)mfgData[actionIdx + 9]; 
       if (sig1 == 0x05 || sig1 == 0x02) {
         nextState.mode = MODE_REPEAT_FADE;
-        CRGB color = getDisneyColor((uint8_t)mfgData[actionIdx + 12]);
+        CRGB color = getDisneyColor((uint8_t)mfgData[actionIdx + 10]);
         for (int i = 0; i < 5; i++) nextState.colors[i] = color;
         triggered = true;
       }
