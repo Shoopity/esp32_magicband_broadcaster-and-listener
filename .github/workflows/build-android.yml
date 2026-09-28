@@ -38,12 +38,27 @@ jobs:
         with:
           gradle-version: ${{ steps.gradle-version.outputs.version }}
 
+      - name: Give this build a separate app ID
+        run: |
+          test -f app/build.gradle || { echo 'Missing android_broadcaster/app/build.gradle'; exit 1; }
+          cat >> app/build.gradle <<'GRADLE'
+
+          // Give the CI test APK its own installation, preserving the existing app.
+          android {
+              buildTypes {
+                  debug {
+                      applicationIdSuffix '.ci_test'
+                  }
+              }
+          }
+          GRADLE
+
       - name: Build debug APK
         run: gradle :app:assembleDebug --stacktrace
 
       - name: Upload debug APK
         uses: actions/upload-artifact@v4
         with:
-          name: android-broadcaster-debug-apk
+          name: android-broadcaster-separate-test-apk
           path: android_broadcaster/app/build/outputs/apk/debug/*.apk
           if-no-files-found: error
